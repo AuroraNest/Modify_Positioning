@@ -16,8 +16,8 @@ import com.aurora.modifypositioning.R
 import com.aurora.modifypositioning.domain.MockControllerStore
 import com.aurora.modifypositioning.location.AndroidLocationInjector
 import com.aurora.modifypositioning.model.DEFAULT_TARGET
+import com.aurora.modifypositioning.model.ENHANCED_UPDATE_INTERVAL_MS
 import com.aurora.modifypositioning.model.MockState
-import com.aurora.modifypositioning.model.UPDATE_INTERVAL_MS
 import com.aurora.modifypositioning.util.MockEnvironmentChecker
 
 class MockLocationService : Service() {
@@ -30,10 +30,13 @@ class MockLocationService : Service() {
         createNotificationChannel(this)
         injector = AndroidLocationInjector(
             context = this,
-            updateIntervalMs = UPDATE_INTERVAL_MS,
+            updateIntervalMs = ENHANCED_UPDATE_INTERVAL_MS,
             onError = { error ->
                 controller.onError(error)
                 refreshNotification()
+            },
+            onInjected = { report ->
+                controller.onInjected(report)
             },
         )
     }

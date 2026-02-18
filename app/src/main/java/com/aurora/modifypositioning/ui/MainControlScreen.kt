@@ -28,6 +28,7 @@ fun MainControlScreen(
     onPause: () -> Unit,
     onStop: () -> Unit,
     onOpenGuide: () -> Unit,
+    onOpenDiagnostic: () -> Unit,
 ) {
     val stateLabel = when (state) {
         MockState.Idle -> "空闲"
@@ -69,6 +70,7 @@ fun MainControlScreen(
             ) {
                 Text("当前状态：$stateLabel", style = MaterialTheme.typography.titleMedium)
                 Text(statusText, style = MaterialTheme.typography.bodyMedium)
+                Text("增强注入模式：已启用", style = MaterialTheme.typography.bodyMedium)
             }
         }
 
@@ -97,6 +99,10 @@ fun MainControlScreen(
 
         TextButton(onClick = onOpenGuide) {
             Text("返回首次引导")
+        }
+
+        TextButton(onClick = onOpenDiagnostic) {
+            Text("打开诊断页面")
         }
     }
 }

@@ -8,18 +8,20 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.collectAsState
 import androidx.core.content.ContextCompat
 import com.aurora.modifypositioning.domain.MockControllerStore
 import com.aurora.modifypositioning.service.MockLocationService
+import com.aurora.modifypositioning.ui.DiagnosticScreen
 import com.aurora.modifypositioning.ui.MainControlScreen
 import com.aurora.modifypositioning.ui.OnboardingScreen
 import com.aurora.modifypositioning.ui.theme.ModifyPositioningTheme
+import com.aurora.modifypositioning.util.LocationDiagnosticsReader
 import com.aurora.modifypositioning.util.MockEnvironmentChecker
 
 class MainActivity : ComponentActivity() {
@@ -36,24 +38,49 @@ class MainActivity : ComponentActivity() {
             val state by controller.state.collectAsState()
             val statusText by controller.statusText.collectAsState()
             val target by controller.target.collectAsState()
+            val lastInjection by controller.lastInjection.collectAsState()
 
             var showOnboarding by rememberSaveable { mutableStateOf(!hasCompletedOnboarding) }
             var isMockAppSelected by remember { mutableStateOf(false) }
             var missingPermissions by remember { mutableStateOf(emptyList<String>()) }
+            var screen by rememberSaveable { mutableStateOf(UiScreen.CONTROL) }
+            var diagnostics by remember {
+                mutableStateOf(
+                    LocationDiagnosticsReader.read(
+                        context = this@MainActivity,
+                        state = state,
+                        lastInjection = lastInjection,
+                    ),
+                )
+            }
 
             fun refreshStatus() {
                 isMockAppSelected = MockEnvironmentChecker.isMockLocationAppSelected(this@MainActivity)
                 missingPermissions = MockEnvironmentChecker.missingPermissions(this@MainActivity)
             }
 
+            fun refreshDiagnostics() {
+                diagnostics = LocationDiagnosticsReader.read(
+                    context = this@MainActivity,
+                    state = state,
+                    lastInjection = lastInjection,
+                )
+            }
+
             val permissionLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.RequestMultiplePermissions(),
             ) {
                 refreshStatus()
+                refreshDiagnostics()
             }
 
             LaunchedEffect(showOnboarding) {
                 refreshStatus()
+                refreshDiagnostics()
+            }
+
+            LaunchedEffect(state, lastInjection) {
+                refreshDiagnostics()
             }
 
             ModifyPositioningTheme {
@@ -63,7 +90,10 @@ class MainActivity : ComponentActivity() {
                         missingPermissions = missingPermissions,
                         onOpenDeveloperOptions = { openDeveloperOptions() },
                         onOpenAppSettings = { openAppDetailSettings() },
-                        onRefreshStatus = { refreshStatus() },
+                        onRefreshStatus = {
+                            refreshStatus()
+                            refreshDiagnostics()
+                        },
                         onContinue = {
                             refreshStatus()
                             if (missingPermissions.isNotEmpty()) {
@@ -76,35 +106,51 @@ class MainActivity : ComponentActivity() {
                         },
                     )
                 } else {
-                    MainControlScreen(
-                        state = state,
-                        statusText = statusText,
-                        target = target,
-                        onStart = {
-                            refreshStatus()
-                            if (missingPermissions.isNotEmpty()) {
-                                permissionLauncher.launch(missingPermissions.toTypedArray())
-                                controller.onError("缺少权限，请完成授权")
-                            } else if (!isMockAppSelected) {
-                                controller.onError("请先在开发者选项中设置模拟位置信息应用")
-                                showOnboarding = true
-                            } else {
-                                ContextCompat.startForegroundService(
-                                    this@MainActivity,
-                                    MockLocationService.startIntent(this@MainActivity),
-                                )
-                            }
-                        },
-                        onPause = {
-                            startService(MockLocationService.pauseIntent(this@MainActivity))
-                        },
-                        onStop = {
-                            startService(MockLocationService.stopIntent(this@MainActivity))
-                        },
-                        onOpenGuide = {
-                            showOnboarding = true
-                        },
-                    )
+                    when (screen) {
+                        UiScreen.CONTROL -> {
+                            MainControlScreen(
+                                state = state,
+                                statusText = statusText,
+                                target = target,
+                                onStart = {
+                                    refreshStatus()
+                                    if (missingPermissions.isNotEmpty()) {
+                                        permissionLauncher.launch(missingPermissions.toTypedArray())
+                                        controller.onError("缺少权限，请完成授权")
+                                    } else if (!isMockAppSelected) {
+                                        controller.onError("请先在开发者选项中设置模拟位置信息应用")
+                                        showOnboarding = true
+                                    } else {
+                                        ContextCompat.startForegroundService(
+                                            this@MainActivity,
+                                            MockLocationService.startIntent(this@MainActivity),
+                                        )
+                                    }
+                                },
+                                onPause = {
+                                    startService(MockLocationService.pauseIntent(this@MainActivity))
+                                },
+                                onStop = {
+                                    startService(MockLocationService.stopIntent(this@MainActivity))
+                                },
+                                onOpenGuide = {
+                                    showOnboarding = true
+                                },
+                                onOpenDiagnostic = {
+                                    refreshDiagnostics()
+                                    screen = UiScreen.DIAGNOSTIC
+                                },
+                            )
+                        }
+
+                        UiScreen.DIAGNOSTIC -> {
+                            DiagnosticScreen(
+                                snapshot = diagnostics,
+                                onRefresh = { refreshDiagnostics() },
+                                onBack = { screen = UiScreen.CONTROL },
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -129,4 +175,9 @@ class MainActivity : ComponentActivity() {
         private const val PREFS_NAME = "app_prefs"
         private const val KEY_ONBOARDING_DONE = "onboarding_done"
     }
+}
+
+private enum class UiScreen {
+    CONTROL,
+    DIAGNOSTIC,
 }

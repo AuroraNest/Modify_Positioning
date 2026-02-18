@@ -2,10 +2,16 @@ package com.aurora.modifypositioning.location
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.location.Criteria
 import android.location.Location
 import android.location.LocationManager
 import android.os.SystemClock
+import com.aurora.modifypositioning.model.ENHANCED_JITTER_RADIUS_METERS
+import com.aurora.modifypositioning.model.InjectionReport
 import com.aurora.modifypositioning.model.TargetLocation
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -20,6 +26,7 @@ class AndroidLocationInjector(
     context: Context,
     private val updateIntervalMs: Long,
     private val onError: (String) -> Unit,
+    private val onInjected: (InjectionReport) -> Unit,
 ) : LocationInjector {
 
     private val appContext = context.applicationContext
@@ -29,6 +36,7 @@ class AndroidLocationInjector(
     private var updateJob: Job? = null
     private var currentTarget: TargetLocation? = null
     private var providersReady = false
+    private var tick = 0L
 
     override fun start(target: TargetLocation) {
         if (!target.isValid()) {
@@ -49,6 +57,7 @@ class AndroidLocationInjector(
         pause()
         currentTarget = null
         removeProviders()
+        tick = 0L
     }
 
     private fun startLoop() {
@@ -95,37 +104,75 @@ class AndroidLocationInjector(
             onError("测试定位通道未就绪")
             return
         }
+
         val now = System.currentTimeMillis()
         val nanos = SystemClock.elapsedRealtimeNanos()
+        val point = jitterPoint(target, tick)
+        tick += 1
+
+        val gpsAccuracy = 4f + ((tick % 3).toFloat())
+        val networkAccuracy = 10f + ((tick % 7).toFloat())
+        val mockSpeed = 0.2f + ((tick % 5).toFloat() * 0.12f)
+        val bearing = ((tick * 17L) % 360L).toFloat()
 
         val gpsLocation = Location(LocationManager.GPS_PROVIDER).apply {
-            latitude = target.latitude
-            longitude = target.longitude
-            accuracy = 1f
+            latitude = point.first
+            longitude = point.second
+            accuracy = gpsAccuracy
             time = now
             elapsedRealtimeNanos = nanos
             altitude = 0.0
-            speed = 0f
-            bearing = 0f
+            speed = mockSpeed
+            this.bearing = bearing
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                verticalAccuracyMeters = 8f
+                speedAccuracyMetersPerSecond = 0.4f
+                bearingAccuracyDegrees = 8f
+            }
         }
 
         val networkLocation = Location(LocationManager.NETWORK_PROVIDER).apply {
-            latitude = target.latitude
-            longitude = target.longitude
-            accuracy = 3f
+            latitude = point.first
+            longitude = point.second
+            accuracy = networkAccuracy
             time = now
             elapsedRealtimeNanos = nanos
             altitude = 0.0
-            speed = 0f
-            bearing = 0f
+            speed = mockSpeed
+            this.bearing = bearing
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                verticalAccuracyMeters = 20f
+                speedAccuracyMetersPerSecond = 1.2f
+                bearingAccuracyDegrees = 16f
+            }
         }
 
         runCatching {
             manager.setTestProviderLocation(LocationManager.GPS_PROVIDER, gpsLocation)
             manager.setTestProviderLocation(LocationManager.NETWORK_PROVIDER, networkLocation)
+            onInjected(
+                InjectionReport(
+                    provider = LocationManager.GPS_PROVIDER,
+                    latitude = gpsLocation.latitude,
+                    longitude = gpsLocation.longitude,
+                    accuracyMeters = gpsLocation.accuracy,
+                    timeMillis = gpsLocation.time,
+                ),
+            )
         }.onFailure {
             onError("注入模拟定位失败: ${it.message ?: "未知错误"}")
         }
+    }
+
+    private fun jitterPoint(target: TargetLocation, index: Long): Pair<Double, Double> {
+        val angle = (index % 360L).toDouble() * (PI / 180.0)
+        val meters = ENHANCED_JITTER_RADIUS_METERS
+        val latPerMeter = 1.0 / 111_320.0
+        val lonPerMeter = 1.0 / (111_320.0 * cos(target.latitude * (PI / 180.0)).coerceAtLeast(0.2))
+
+        val latOffset = sin(angle) * meters * latPerMeter
+        val lonOffset = cos(angle) * meters * lonPerMeter
+        return (target.latitude + latOffset) to (target.longitude + lonOffset)
     }
 
     private fun addTestProvider(provider: String) {
@@ -140,8 +187,8 @@ class AndroidLocationInjector(
             true,
             true,
             true,
-            android.location.Criteria.POWER_LOW,
-            android.location.Criteria.ACCURACY_FINE,
+            Criteria.POWER_LOW,
+            Criteria.ACCURACY_FINE,
         )
     }
 

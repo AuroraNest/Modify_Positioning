@@ -1,6 +1,7 @@
 package com.aurora.modifypositioning.domain
 
 import com.aurora.modifypositioning.model.DEFAULT_TARGET
+import com.aurora.modifypositioning.model.InjectionReport
 import com.aurora.modifypositioning.model.MockState
 import com.aurora.modifypositioning.model.TargetLocation
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,6 +19,9 @@ class MockController(
 
     private val _statusText = MutableStateFlow("尚未启动")
     val statusText: StateFlow<String> = _statusText.asStateFlow()
+
+    private val _lastInjection = MutableStateFlow<InjectionReport?>(null)
+    val lastInjection: StateFlow<InjectionReport?> = _lastInjection.asStateFlow()
 
     fun updateTarget(targetLocation: TargetLocation) {
         _target.value = targetLocation
@@ -37,6 +41,11 @@ class MockController(
     fun onServiceStopped() {
         _state.value = MockState.Idle
         _statusText.value = "模拟已停止"
+        _lastInjection.value = null
+    }
+
+    fun onInjected(report: InjectionReport) {
+        _lastInjection.value = report
     }
 
     fun onError(message: String) {
