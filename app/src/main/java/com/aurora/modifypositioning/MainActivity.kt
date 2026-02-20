@@ -3,6 +3,7 @@ package com.aurora.modifypositioning
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -102,17 +103,34 @@ class MainActivity : ComponentActivity() {
                 refreshStatus()
                 if (missingPermissions.isNotEmpty()) {
                     controller.onError("缺少权限，请完成授权")
+                    Toast.makeText(this@MainActivity, "启动失败：缺少权限", Toast.LENGTH_SHORT).show()
                     return
                 }
                 if (!isMockAppSelected) {
                     controller.onError("请先在开发者选项中设置模拟位置信息应用")
                     showOnboarding = true
+                    Toast.makeText(
+                        this@MainActivity,
+                        "启动失败：请先设置模拟位置信息应用",
+                        Toast.LENGTH_SHORT,
+                    ).show()
                     return
                 }
                 ContextCompat.startForegroundService(
                     this@MainActivity,
                     MockLocationService.startIntent(this@MainActivity),
                 )
+                Toast.makeText(this@MainActivity, "已开始修改定位", Toast.LENGTH_SHORT).show()
+            }
+
+            fun pauseMock() {
+                startService(MockLocationService.pauseIntent(this@MainActivity))
+                Toast.makeText(this@MainActivity, "已暂停定位修改", Toast.LENGTH_SHORT).show()
+            }
+
+            fun stopMock() {
+                startService(MockLocationService.stopIntent(this@MainActivity))
+                Toast.makeText(this@MainActivity, "已停止定位修改", Toast.LENGTH_SHORT).show()
             }
 
             val permissionLauncher = rememberLauncherForActivityResult(
@@ -175,8 +193,8 @@ class MainActivity : ComponentActivity() {
                                 onDeleteFavorite = { mapViewModel.deleteFavorite(it) },
                                 onRenameFavorite = { item, name -> mapViewModel.renameFavorite(item, name) },
                                 onStart = { startMock() },
-                                onPause = { startService(MockLocationService.pauseIntent(this@MainActivity)) },
-                                onStop = { startService(MockLocationService.stopIntent(this@MainActivity)) },
+                                onPause = { pauseMock() },
+                                onStop = { stopMock() },
                                 onOpenGuide = { showOnboarding = true },
                                 onOpenDiagnostic = {
                                     refreshDiagnostics()
@@ -192,12 +210,8 @@ class MainActivity : ComponentActivity() {
                                 statusText = statusText,
                                 target = target,
                                 onStart = { startMock() },
-                                onPause = {
-                                    startService(MockLocationService.pauseIntent(this@MainActivity))
-                                },
-                                onStop = {
-                                    startService(MockLocationService.stopIntent(this@MainActivity))
-                                },
+                                onPause = { pauseMock() },
+                                onStop = { stopMock() },
                                 onOpenGuide = {
                                     showOnboarding = true
                                 },
