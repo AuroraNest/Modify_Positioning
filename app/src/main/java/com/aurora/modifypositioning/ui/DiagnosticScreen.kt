@@ -52,6 +52,8 @@ fun DiagnosticScreen(
                 Text("模拟位置信息应用：${if (snapshot.isMockAppSelected) "已设置" else "未设置"}")
                 Text("GPS 开关：${if (snapshot.gpsEnabled) "开启" else "关闭"}")
                 Text("网络定位开关：${if (snapshot.networkEnabled) "开启" else "关闭"}")
+                Text("坐标校准模式：${snapshot.calibrationMode}")
+                Text("会话搜索请求数：${snapshot.searchRequestCount}")
                 Text(
                     if (snapshot.missingPermissions.isEmpty()) {
                         "权限：完整"

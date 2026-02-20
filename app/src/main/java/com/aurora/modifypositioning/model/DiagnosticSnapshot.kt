@@ -19,4 +19,6 @@ data class DiagnosticSnapshot(
     val networkLastKnown: DiagnosticLocation?,
     val appState: MockState,
     val lastInjection: InjectionReport?,
+    val calibrationMode: CoordinateCalibrationMode,
+    val searchRequestCount: Int,
 )

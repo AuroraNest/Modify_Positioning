@@ -5,10 +5,12 @@ import android.content.Context
 import android.location.Location
 import android.location.LocationManager
 import android.os.Build
+import com.aurora.modifypositioning.data.MapPreferencesStore
 import com.aurora.modifypositioning.model.DiagnosticLocation
 import com.aurora.modifypositioning.model.DiagnosticSnapshot
 import com.aurora.modifypositioning.model.InjectionReport
 import com.aurora.modifypositioning.model.MockState
+import kotlinx.coroutines.runBlocking
 
 object LocationDiagnosticsReader {
 
@@ -16,6 +18,7 @@ object LocationDiagnosticsReader {
         context: Context,
         state: MockState,
         lastInjection: InjectionReport?,
+        mapPreferencesStore: MapPreferencesStore,
     ): DiagnosticSnapshot {
         val missingPermissions = MockEnvironmentChecker.missingPermissions(context)
         val manager = context.getSystemService(LocationManager::class.java)
@@ -36,6 +39,8 @@ object LocationDiagnosticsReader {
             null
         }
 
+        val calibrationMode = runBlocking { mapPreferencesStore.getCalibrationMode() }
+
         return DiagnosticSnapshot(
             generatedAtMillis = System.currentTimeMillis(),
             isMockAppSelected = MockEnvironmentChecker.isMockLocationAppSelected(context),
@@ -46,6 +51,8 @@ object LocationDiagnosticsReader {
             networkLastKnown = network,
             appState = state,
             lastInjection = lastInjection,
+            calibrationMode = calibrationMode,
+            searchRequestCount = AppSessionMetrics.searchRequests,
         )
     }
 

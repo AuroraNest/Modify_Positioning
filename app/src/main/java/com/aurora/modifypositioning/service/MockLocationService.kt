@@ -15,23 +15,31 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.aurora.modifypositioning.MainActivity
 import com.aurora.modifypositioning.R
+import com.aurora.modifypositioning.data.MapPreferencesStore
 import com.aurora.modifypositioning.domain.MockControllerStore
+import com.aurora.modifypositioning.domain.calibration.MainlandCoordinateCalibrator
 import com.aurora.modifypositioning.location.AndroidLocationInjector
+import com.aurora.modifypositioning.model.CoordinateCalibrationMode
 import com.aurora.modifypositioning.model.DEFAULT_TARGET
 import com.aurora.modifypositioning.model.ENHANCED_UPDATE_INTERVAL_MS
 import com.aurora.modifypositioning.model.MockState
+import com.aurora.modifypositioning.model.TargetLocation
 import com.aurora.modifypositioning.util.MockEnvironmentChecker
+import kotlinx.coroutines.runBlocking
 
 class MockLocationService : Service() {
 
     private lateinit var injector: AndroidLocationInjector
     private val controller = MockControllerStore.instance
+    private lateinit var mapPreferencesStore: MapPreferencesStore
+    private val coordinateCalibrator = MainlandCoordinateCalibrator()
     private var explicitStop = false
     private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel(this)
+        mapPreferencesStore = MapPreferencesStore(this)
         injector = AndroidLocationInjector(
             context = this,
             updateIntervalMs = ENHANCED_UPDATE_INTERVAL_MS,
@@ -86,10 +94,26 @@ class MockLocationService : Service() {
             return
         }
 
-        injector.start(DEFAULT_TARGET)
+        val selectedTarget = runBlocking { mapPreferencesStore.getTargetOrNull() } ?: DEFAULT_TARGET
+        val calibrationMode = runBlocking { mapPreferencesStore.getCalibrationMode() }
+        val injectTarget = buildInjectTarget(selectedTarget, calibrationMode)
+
+        injector.start(injectTarget)
         acquireWakeLock()
-        controller.onServiceStarted(DEFAULT_TARGET)
+        controller.onServiceStarted(selectedTarget)
         refreshNotification()
+    }
+
+    private fun buildInjectTarget(
+        selectedTarget: TargetLocation,
+        calibrationMode: CoordinateCalibrationMode,
+    ): TargetLocation {
+        val calibrated = coordinateCalibrator.toInjectCoordinate(
+            lat = selectedTarget.latitude,
+            lng = selectedTarget.longitude,
+            mode = calibrationMode,
+        )
+        return selectedTarget.copy(latitude = calibrated.first, longitude = calibrated.second)
     }
 
     private fun handlePause() {
