@@ -10,10 +10,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -134,128 +137,141 @@ fun MapControlScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Text("地图精细选点控制台", style = MaterialTheme.typography.headlineSmall)
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(320.dp),
-        ) {
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                factory = {
-                    Configuration.getInstance().load(
-                        context,
-                        PreferenceManager.getDefaultSharedPreferences(context),
-                    )
-                    Configuration.getInstance().userAgentValue = context.packageName
-
-                    MapView(context).apply {
-                        setTileSource(TileSourceFactory.MAPNIK)
-                        setMultiTouchControls(true)
-                        isTilesScaledToDpi = true
-                        controller.setZoom(uiState.camera.zoom.toDouble())
-                        controller.setCenter(GeoPoint(uiState.camera.lat, uiState.camera.lng))
-                        addMapListener(
-                            object : MapListener {
-                                override fun onScroll(event: ScrollEvent): Boolean {
-                                    if (!this@apply.isAnimating) {
-                                        publishCenter(this@apply)
-                                    }
-                                    return true
-                                }
-
-                                override fun onZoom(event: ZoomEvent): Boolean {
-                                    if (!this@apply.isAnimating) {
-                                        publishCenter(this@apply)
-                                    }
-                                    return true
-                                }
-                            },
-                        )
-                    }.also { createdMapView ->
-                        mapViewRef = createdMapView
+    Scaffold(
+        bottomBar = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Button(onClick = onStart, modifier = Modifier.weight(1f)) {
+                        Text("开始")
                     }
-                },
-                update = { updatedMapView ->
-                    mapViewRef = updatedMapView
-                },
-            )
+                    OutlinedButton(onClick = onPause, modifier = Modifier.weight(1f)) {
+                        Text("暂停")
+                    }
+                    OutlinedButton(onClick = onStop, modifier = Modifier.weight(1f)) {
+                        Text("停止")
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    TextButton(onClick = onOpenGuide) {
+                        Text("首次引导")
+                    }
+                    TextButton(onClick = onOpenDiagnostic) {
+                        Text("诊断页面")
+                    }
+                }
+            }
+        },
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(horizontal = 12.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("地图精细选点控制台", style = MaterialTheme.typography.headlineSmall)
 
             Box(
                 modifier = Modifier
-                    .align(Alignment.Center)
-                    .background(Color.Transparent),
+                    .fillMaxWidth()
+                    .height(320.dp),
             ) {
-                Text("+", style = MaterialTheme.typography.headlineMedium, color = Color.Red)
-            }
-        }
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = {
+                        Configuration.getInstance().load(
+                            context,
+                            PreferenceManager.getDefaultSharedPreferences(context),
+                        )
+                        Configuration.getInstance().userAgentValue = context.packageName
 
-        PlaceSearchBar(
-            query = uiState.searchQuery,
-            suggestions = uiState.suggestions,
-            isSearching = uiState.isSearching,
-            searchError = uiState.searchError,
-            onQueryChanged = onSearchQueryChanged,
-            onSelectSuggestion = onSuggestionSelected,
-        )
+                        MapView(context).apply {
+                            setTileSource(TileSourceFactory.MAPNIK)
+                            setMultiTouchControls(true)
+                            isTilesScaledToDpi = true
+                            controller.setZoom(uiState.camera.zoom.toDouble())
+                            controller.setCenter(GeoPoint(uiState.camera.lat, uiState.camera.lng))
+                            addMapListener(
+                                object : MapListener {
+                                    override fun onScroll(event: ScrollEvent): Boolean {
+                                        if (!this@apply.isAnimating) {
+                                            publishCenter(this@apply)
+                                        }
+                                        return true
+                                    }
 
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text("当前选点：${uiState.selectedTarget.name}")
-                Text("会话搜索请求数：${uiState.searchRequestCount}")
-
-                CalibrationSelector(
-                    mode = uiState.calibrationMode,
-                    onModeChanged = onCalibrationModeChanged,
+                                    override fun onZoom(event: ZoomEvent): Boolean {
+                                        if (!this@apply.isAnimating) {
+                                            publishCenter(this@apply)
+                                        }
+                                        return true
+                                    }
+                                },
+                            )
+                        }.also { createdMapView ->
+                            mapViewRef = createdMapView
+                        }
+                    },
+                    update = { updatedMapView ->
+                        mapViewRef = updatedMapView
+                    },
                 )
-            }
-        }
 
-        FavoriteSheet(
-            favorites = uiState.favorites,
-            favoriteNameInput = uiState.favoriteNameInput,
-            onFavoriteNameInputChanged = onFavoriteNameInputChanged,
-            onAddFavorite = onAddFavorite,
-            onSelectFavorite = onSelectFavorite,
-            onDeleteFavorite = onDeleteFavorite,
-            onRenameFavorite = onRenameFavorite,
-        )
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .background(Color.Transparent),
+                ) {
+                    Text("+", style = MaterialTheme.typography.headlineMedium, color = Color.Red)
+                }
+            }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Button(onClick = onStart, modifier = Modifier.weight(1f)) {
-                Text("开始")
-            }
-            OutlinedButton(onClick = onPause, modifier = Modifier.weight(1f)) {
-                Text("暂停")
-            }
-            OutlinedButton(onClick = onStop, modifier = Modifier.weight(1f)) {
-                Text("停止")
-            }
-        }
+            PlaceSearchBar(
+                query = uiState.searchQuery,
+                suggestions = uiState.suggestions,
+                isSearching = uiState.isSearching,
+                searchError = uiState.searchError,
+                onQueryChanged = onSearchQueryChanged,
+                onSelectSuggestion = onSuggestionSelected,
+            )
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            TextButton(onClick = onOpenGuide) {
-                Text("首次引导")
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("当前选点：${uiState.selectedTarget.name}")
+                    Text("会话搜索请求数：${uiState.searchRequestCount}")
+
+                    CalibrationSelector(
+                        mode = uiState.calibrationMode,
+                        onModeChanged = onCalibrationModeChanged,
+                    )
+                }
             }
-            TextButton(onClick = onOpenDiagnostic) {
-                Text("诊断页面")
-            }
+
+            FavoriteSheet(
+                favorites = uiState.favorites,
+                favoriteNameInput = uiState.favoriteNameInput,
+                onFavoriteNameInputChanged = onFavoriteNameInputChanged,
+                onAddFavorite = onAddFavorite,
+                onSelectFavorite = onSelectFavorite,
+                onDeleteFavorite = onDeleteFavorite,
+                onRenameFavorite = onRenameFavorite,
+            )
         }
     }
 }
