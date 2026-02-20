@@ -56,6 +56,9 @@ class MainActivity : ComponentActivity() {
             val placeSearchRepository = remember {
                 NominatimPlaceSearchRepository()
             }
+            val isAmapFeatureEnabled = remember {
+                BuildConfig.AMAP_API_KEY.trim().isNotEmpty()
+            }
 
             val mapViewModel: MapControlViewModel = viewModel(
                 factory = MapControlViewModelFactory(
@@ -71,7 +74,7 @@ class MainActivity : ComponentActivity() {
             var isMockAppSelected by remember { mutableStateOf(false) }
             var missingPermissions by remember { mutableStateOf(emptyList<String>()) }
             var screen by rememberSaveable {
-                mutableStateOf(UiScreen.MAP)
+                mutableStateOf(if (isAmapFeatureEnabled) UiScreen.MAP else UiScreen.LEGACY_CONTROL)
             }
             var diagnostics by remember {
                 mutableStateOf(
@@ -126,6 +129,9 @@ class MainActivity : ComponentActivity() {
                 val savedTarget = mapPreferencesStore.getTargetOrNull()
                 if (savedTarget != null) {
                     controller.updateTarget(savedTarget)
+                }
+                if (!isAmapFeatureEnabled) {
+                    controller.onError("高德 Key 未配置，已自动回退经典控制台")
                 }
             }
 
@@ -216,7 +222,7 @@ class MainActivity : ComponentActivity() {
                                 snapshot = diagnostics,
                                 onRefresh = { refreshDiagnostics() },
                                 onBack = {
-                                    screen = UiScreen.MAP
+                                    screen = if (isAmapFeatureEnabled) UiScreen.MAP else UiScreen.LEGACY_CONTROL
                                 },
                             )
                         }

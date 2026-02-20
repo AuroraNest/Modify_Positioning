@@ -35,7 +35,7 @@ fun PlaceSearchBar(
             value = query,
             onValueChange = onQueryChanged,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("输入位置（开源地图搜索）") },
+            label = { Text("输入位置（地址搜索）") },
             singleLine = true,
             trailingIcon = {
                 if (isSearching) {
