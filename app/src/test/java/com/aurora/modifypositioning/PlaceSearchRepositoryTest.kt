@@ -1,9 +1,8 @@
 package com.aurora.modifypositioning
 
-import com.aurora.modifypositioning.data.GooglePlaceSearchRepository
+import com.aurora.modifypositioning.data.NominatimPlaceSearchRepository
 import com.aurora.modifypositioning.model.PlaceSuggestion
 import com.aurora.modifypositioning.util.AppSessionMetrics
-import com.google.android.gms.maps.model.LatLng
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -12,13 +11,13 @@ import org.junit.Test
 class PlaceSearchRepositoryTest {
 
     private lateinit var remote: FakeRemote
-    private lateinit var repository: GooglePlaceSearchRepository
+    private lateinit var repository: NominatimPlaceSearchRepository
 
     @Before
     fun setup() {
         AppSessionMetrics.reset()
         remote = FakeRemote()
-        repository = GooglePlaceSearchRepository(remote, cacheTtlMillis = 5 * 60 * 1000L)
+        repository = NominatimPlaceSearchRepository(remote, cacheTtlMillis = 5 * 60 * 1000L)
     }
 
     @Test
@@ -46,23 +45,20 @@ class PlaceSearchRepositoryTest {
         assertEquals(0, remote.searchCalls)
     }
 
-    private class FakeRemote : GooglePlaceSearchRepository.PlaceSearchRemote {
+    private class FakeRemote : NominatimPlaceSearchRepository.PlaceSearchRemote {
         var searchCalls: Int = 0
 
-        override suspend fun searchPredictions(query: String): List<GooglePlaceSearchRepository.Prediction> {
+        override suspend fun search(query: String): List<PlaceSuggestion> {
             searchCalls += 1
             return List(8) { index ->
-                GooglePlaceSearchRepository.Prediction(
+                PlaceSuggestion(
                     id = "id_$index",
                     title = "title_$index",
                     subtitle = "subtitle_$index",
+                    lat = 30.0 + index,
+                    lng = 120.0 + index,
                 )
             }
-        }
-
-        override suspend fun fetchLatLng(placeId: String): LatLng {
-            val index = placeId.removePrefix("id_").toDoubleOrNull() ?: 0.0
-            return LatLng(30.0 + index, 120.0 + index)
         }
     }
 }

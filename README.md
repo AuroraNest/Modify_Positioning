@@ -4,30 +4,19 @@
 
 ## 当前能力
 
-- 地图精细选点控制台（Google Maps）：
-  - 输入地址联想搜索（Places Autocomplete）
+- 地图精细选点控制台（OpenStreetMap）：
+  - 输入地址联想搜索（Nominatim）
   - 地图拖动十字准星选点
   - 手动输入经纬度
 - 收藏点管理：新增 / 重命名 / 删除 / 一键使用
 - 坐标校准开关：关闭 / 中国大陆兼容
-- 无 Key 自动回退：未配置 Google Key 时自动回退到经典控制台
+- 无需 Google Key，国内可直接使用
 - 前台服务持续注入定位，支持开始 / 暂停 / 停止
 - 诊断页面：mock 状态、注入状态、校准模式、搜索请求计数
 
-## Google Key 配置（可选）
-
-在项目根目录 `gradle.properties` 配置：
-
-```properties
-GOOGLE_MAPS_API_KEY=你的GoogleKey
-```
-
-- 未配置时：自动回退经典控制台（不影响基础模拟能力）
-- 已配置时：启用地图精细选点与地址联想
-
 ## 运行环境
 
-- Android Studio Hedgehog 及以上（建议最新稳定版）
+- Android Studio Iguana+
 - JDK 17
 - Android 10 (API 29) 及以上
 

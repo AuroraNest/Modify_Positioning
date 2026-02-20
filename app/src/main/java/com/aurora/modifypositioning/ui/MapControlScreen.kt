@@ -1,5 +1,6 @@
 package com.aurora.modifypositioning.ui
 
+import android.preference.PreferenceManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,31 +18,46 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.aurora.modifypositioning.model.CoordinateCalibrationMode
+import com.aurora.modifypositioning.model.FavoriteLocation
+import com.aurora.modifypositioning.model.PlaceSuggestion
 import com.aurora.modifypositioning.model.SelectionSource
-import com.aurora.modifypositioning.model.TargetLocation
 import com.aurora.modifypositioning.ui.components.FavoriteSheet
 import com.aurora.modifypositioning.ui.components.PlaceSearchBar
 import com.aurora.modifypositioning.ui.map.MapControlUiState
-import com.google.android.gms.maps.CameraUpdateFactory
-import com.google.android.gms.maps.model.CameraPosition
-import com.google.android.gms.maps.model.LatLng
-import com.google.maps.android.compose.GoogleMap
-import com.google.maps.android.compose.MapProperties
-import com.google.maps.android.compose.MapUiSettings
-import com.google.maps.android.compose.rememberCameraPositionState
+import kotlin.math.abs
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import org.osmdroid.config.Configuration
+import org.osmdroid.events.MapListener
+import org.osmdroid.events.ScrollEvent
+import org.osmdroid.events.ZoomEvent
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView
 
 @Composable
 fun MapControlScreen(
     uiState: MapControlUiState,
     onSearchQueryChanged: (String) -> Unit,
-    onSuggestionSelected: (com.aurora.modifypositioning.model.PlaceSuggestion) -> Unit,
+    onSuggestionSelected: (PlaceSuggestion) -> Unit,
     onMapDraggedSelection: (Double, Double) -> Unit,
     onManualLatChanged: (String) -> Unit,
     onManualLngChanged: (String) -> Unit,
@@ -49,9 +65,9 @@ fun MapControlScreen(
     onCalibrationModeChanged: (CoordinateCalibrationMode) -> Unit,
     onAddFavorite: () -> Unit,
     onFavoriteNameInputChanged: (String) -> Unit,
-    onSelectFavorite: (com.aurora.modifypositioning.model.FavoriteLocation) -> Unit,
-    onDeleteFavorite: (com.aurora.modifypositioning.model.FavoriteLocation) -> Unit,
-    onRenameFavorite: (com.aurora.modifypositioning.model.FavoriteLocation, String) -> Unit,
+    onSelectFavorite: (FavoriteLocation) -> Unit,
+    onDeleteFavorite: (FavoriteLocation) -> Unit,
+    onRenameFavorite: (FavoriteLocation, String) -> Unit,
     onStart: () -> Unit,
     onPause: () -> Unit,
     onStop: () -> Unit,
@@ -59,29 +75,66 @@ fun MapControlScreen(
     onOpenDiagnostic: () -> Unit,
     onCameraIdle: (Double, Double, Float) -> Unit,
 ) {
-    val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(
-            LatLng(uiState.camera.lat, uiState.camera.lng),
-            uiState.camera.zoom,
-        )
-    }
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
+    var mapViewRef by remember { mutableStateOf<MapView?>(null) }
+    var idleJob by remember { mutableStateOf<Job?>(null) }
 
-    LaunchedEffect(uiState.selectedTarget.latitude, uiState.selectedTarget.longitude, uiState.lastSelectionSource) {
-        if (uiState.lastSelectionSource != SelectionSource.MAP_DRAG) {
-            cameraPositionState.animate(
-                update = CameraUpdateFactory.newLatLng(
-                    LatLng(uiState.selectedTarget.latitude, uiState.selectedTarget.longitude),
-                ),
-                durationMs = 350,
-            )
+    fun publishCenter(mapView: MapView) {
+        idleJob?.cancel()
+        idleJob = scope.launch {
+            delay(250)
+            val center = mapView.mapCenter
+            val lat = center.latitude
+            val lng = center.longitude
+            val zoom = mapView.zoomLevelDouble.toFloat()
+            onCameraIdle(lat, lng, zoom)
+            onMapDraggedSelection(lat, lng)
         }
     }
 
-    LaunchedEffect(cameraPositionState.isMoving) {
-        if (!cameraPositionState.isMoving) {
-            val center = cameraPositionState.position.target
-            onCameraIdle(center.latitude, center.longitude, cameraPositionState.position.zoom)
-            onMapDraggedSelection(center.latitude, center.longitude)
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> mapViewRef?.onResume()
+                Lifecycle.Event.ON_PAUSE -> mapViewRef?.onPause()
+                Lifecycle.Event.ON_DESTROY -> mapViewRef?.onDetach()
+                else -> Unit
+            }
+        }
+
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            idleJob?.cancel()
+            mapViewRef?.onDetach()
+            mapViewRef = null
+        }
+    }
+
+    LaunchedEffect(
+        uiState.selectedTarget.latitude,
+        uiState.selectedTarget.longitude,
+        uiState.camera.zoom,
+        uiState.lastSelectionSource,
+    ) {
+        val mapView = mapViewRef ?: return@LaunchedEffect
+        if (uiState.lastSelectionSource == SelectionSource.MAP_DRAG) {
+            return@LaunchedEffect
+        }
+
+        val desired = GeoPoint(uiState.selectedTarget.latitude, uiState.selectedTarget.longitude)
+        val current = mapView.mapCenter
+        if (
+            abs(current.latitude - desired.latitude) > 0.000001 ||
+            abs(current.longitude - desired.longitude) > 0.000001
+        ) {
+            mapView.controller.animateTo(desired)
+        }
+
+        if (abs(mapView.zoomLevelDouble - uiState.camera.zoom.toDouble()) > 0.05) {
+            mapView.controller.setZoom(uiState.camera.zoom.toDouble())
         }
     }
 
@@ -98,14 +151,45 @@ fun MapControlScreen(
                 .fillMaxWidth()
                 .height(320.dp),
         ) {
-            GoogleMap(
+            AndroidView(
                 modifier = Modifier.fillMaxSize(),
-                cameraPositionState = cameraPositionState,
-                uiSettings = MapUiSettings(
-                    zoomControlsEnabled = false,
-                    myLocationButtonEnabled = false,
-                ),
-                properties = MapProperties(isMyLocationEnabled = false),
+                factory = {
+                    Configuration.getInstance().load(
+                        context,
+                        PreferenceManager.getDefaultSharedPreferences(context),
+                    )
+                    Configuration.getInstance().userAgentValue = context.packageName
+
+                    MapView(context).apply {
+                        setTileSource(TileSourceFactory.MAPNIK)
+                        setMultiTouchControls(true)
+                        isTilesScaledToDpi = true
+                        controller.setZoom(uiState.camera.zoom.toDouble())
+                        controller.setCenter(GeoPoint(uiState.camera.lat, uiState.camera.lng))
+                        addMapListener(
+                            object : MapListener {
+                                override fun onScroll(event: ScrollEvent): Boolean {
+                                    if (!this@apply.isAnimating) {
+                                        publishCenter(this@apply)
+                                    }
+                                    return true
+                                }
+
+                                override fun onZoom(event: ZoomEvent): Boolean {
+                                    if (!this@apply.isAnimating) {
+                                        publishCenter(this@apply)
+                                    }
+                                    return true
+                                }
+                            },
+                        )
+                    }.also { createdMapView ->
+                        mapViewRef = createdMapView
+                    }
+                },
+                update = { updatedMapView ->
+                    mapViewRef = updatedMapView
+                },
             )
 
             Box(
@@ -113,7 +197,7 @@ fun MapControlScreen(
                     .align(Alignment.Center)
                     .background(Color.Transparent),
             ) {
-                Text("✛", style = MaterialTheme.typography.headlineMedium, color = Color.Red)
+                Text("+", style = MaterialTheme.typography.headlineMedium, color = Color.Red)
             }
         }
 

@@ -17,8 +17,8 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aurora.modifypositioning.data.FavoriteLocationRepository
-import com.aurora.modifypositioning.data.GooglePlaceSearchRepository
 import com.aurora.modifypositioning.data.MapPreferencesStore
+import com.aurora.modifypositioning.data.NominatimPlaceSearchRepository
 import com.aurora.modifypositioning.data.local.LocationDatabase
 import com.aurora.modifypositioning.domain.MockControllerStore
 import com.aurora.modifypositioning.service.MockLocationService
@@ -31,7 +31,6 @@ import com.aurora.modifypositioning.ui.map.MapControlViewModelFactory
 import com.aurora.modifypositioning.ui.theme.ModifyPositioningTheme
 import com.aurora.modifypositioning.util.LocationDiagnosticsReader
 import com.aurora.modifypositioning.util.MockEnvironmentChecker
-import com.google.android.libraries.places.api.Places
 
 class MainActivity : ComponentActivity() {
 
@@ -54,16 +53,8 @@ class MainActivity : ComponentActivity() {
                 FavoriteLocationRepository(LocationDatabase.get(this@MainActivity).locationDao())
             }
 
-            val isMapFeatureEnabled = remember {
-                isGoogleMapFeatureEnabled()
-            }
-
-            val placeSearchRepository = remember(isMapFeatureEnabled) {
-                if (!isMapFeatureEnabled) {
-                    null
-                } else {
-                    GooglePlaceSearchRepository(Places.createClient(this@MainActivity))
-                }
+            val placeSearchRepository = remember {
+                NominatimPlaceSearchRepository()
             }
 
             val mapViewModel: MapControlViewModel = viewModel(
@@ -80,9 +71,7 @@ class MainActivity : ComponentActivity() {
             var isMockAppSelected by remember { mutableStateOf(false) }
             var missingPermissions by remember { mutableStateOf(emptyList<String>()) }
             var screen by rememberSaveable {
-                mutableStateOf(
-                    if (isMapFeatureEnabled) UiScreen.MAP else UiScreen.LEGACY_CONTROL,
-                )
+                mutableStateOf(UiScreen.MAP)
             }
             var diagnostics by remember {
                 mutableStateOf(
@@ -137,9 +126,6 @@ class MainActivity : ComponentActivity() {
                 val savedTarget = mapPreferencesStore.getTargetOrNull()
                 if (savedTarget != null) {
                     controller.updateTarget(savedTarget)
-                }
-                if (!isMapFeatureEnabled) {
-                    controller.onError("Google Key 未配置，已自动回退到经典控制台")
                 }
             }
 
@@ -230,7 +216,7 @@ class MainActivity : ComponentActivity() {
                                 snapshot = diagnostics,
                                 onRefresh = { refreshDiagnostics() },
                                 onBack = {
-                                    screen = if (isMapFeatureEnabled) UiScreen.MAP else UiScreen.LEGACY_CONTROL
+                                    screen = UiScreen.MAP
                                 },
                             )
                         }
@@ -238,19 +224,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-    }
-
-    private fun isGoogleMapFeatureEnabled(): Boolean {
-        val key = BuildConfig.GOOGLE_MAPS_API_KEY.trim()
-        if (key.isBlank()) {
-            return false
-        }
-        return runCatching {
-            if (!Places.isInitialized()) {
-                Places.initialize(applicationContext, key)
-            }
-            true
-        }.getOrDefault(false)
     }
 
     private fun openDeveloperOptions() {

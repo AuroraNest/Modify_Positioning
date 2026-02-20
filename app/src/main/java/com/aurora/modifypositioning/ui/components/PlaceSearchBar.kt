@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
@@ -34,11 +35,15 @@ fun PlaceSearchBar(
             value = query,
             onValueChange = onQueryChanged,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("输入位置（Autocomplete）") },
+            label = { Text("输入位置（开源地图搜索）") },
             singleLine = true,
             trailingIcon = {
                 if (isSearching) {
-                    CircularProgressIndicator(modifier = Modifier.padding(8.dp))
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .padding(8.dp)
+                            .size(18.dp),
+                    )
                 }
             },
         )

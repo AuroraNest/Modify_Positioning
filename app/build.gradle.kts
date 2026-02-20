@@ -4,8 +4,6 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
-val googleMapsApiKey = (project.findProperty("GOOGLE_MAPS_API_KEY") as String?)?.trim().orEmpty()
-
 android {
     namespace = "com.aurora.modifypositioning"
     compileSdk = 35
@@ -21,9 +19,6 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
-
-        manifestPlaceholders["GOOGLE_MAPS_API_KEY"] = googleMapsApiKey
-        buildConfigField("String", "GOOGLE_MAPS_API_KEY", "\"$googleMapsApiKey\"")
     }
 
     buildTypes {
@@ -83,9 +78,7 @@ dependencies {
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
 
-    implementation("com.google.android.gms:play-services-maps:18.2.0")
-    implementation("com.google.maps.android:maps-compose:4.3.0")
-    implementation("com.google.android.libraries.places:places:3.4.0")
+    implementation("org.osmdroid:osmdroid-android:6.1.20")
 
     implementation(platform("androidx.compose:compose-bom:2024.09.03"))
     implementation("androidx.compose.ui:ui")

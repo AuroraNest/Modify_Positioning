@@ -73,7 +73,7 @@ class MapControlViewModel(
         }
 
         searchJob = viewModelScope.launch {
-            delay(350)
+            delay(600)
             _uiState.update { it.copy(isSearching = true) }
 
             runCatching { placeSearchRepository.autocomplete(query) }
