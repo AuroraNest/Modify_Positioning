@@ -7,6 +7,8 @@ import android.location.Location
 import android.location.LocationManager
 import android.os.SystemClock
 import com.aurora.modifypositioning.model.ENHANCED_JITTER_RADIUS_METERS
+import com.aurora.modifypositioning.model.ENHANCED_STARTUP_BURST_COUNT
+import com.aurora.modifypositioning.model.ENHANCED_STARTUP_BURST_INTERVAL_MS
 import com.aurora.modifypositioning.model.InjectionReport
 import com.aurora.modifypositioning.model.TargetLocation
 import kotlin.math.PI
@@ -37,6 +39,7 @@ class AndroidLocationInjector(
     private var currentTarget: TargetLocation? = null
     private var providersReady = false
     private var tick = 0L
+    private var burstRemain = 0
 
     override fun start(target: TargetLocation) {
         if (!target.isValid()) {
@@ -45,7 +48,9 @@ class AndroidLocationInjector(
         }
         currentTarget = target
         ensureProviders()
+        burstRemain = ENHANCED_STARTUP_BURST_COUNT
         startLoop()
+        inject(target)
     }
 
     override fun pause() {
@@ -58,6 +63,7 @@ class AndroidLocationInjector(
         currentTarget = null
         removeProviders()
         tick = 0L
+        burstRemain = 0
     }
 
     private fun startLoop() {
@@ -70,8 +76,17 @@ class AndroidLocationInjector(
                     break
                 }
                 inject(target)
-                delay(updateIntervalMs)
+                delay(nextDelay())
             }
+        }
+    }
+
+    private fun nextDelay(): Long {
+        return if (burstRemain > 0) {
+            burstRemain -= 1
+            ENHANCED_STARTUP_BURST_INTERVAL_MS
+        } else {
+            updateIntervalMs
         }
     }
 
@@ -99,6 +114,10 @@ class AndroidLocationInjector(
         val manager = locationManager ?: run {
             onError("定位服务不可用")
             return
+        }
+        if (!providersReady || !isProviderReady(manager, LocationManager.GPS_PROVIDER) || !isProviderReady(manager, LocationManager.NETWORK_PROVIDER)) {
+            providersReady = false
+            ensureProviders()
         }
         if (!providersReady) {
             onError("测试定位通道未就绪")
@@ -160,8 +179,15 @@ class AndroidLocationInjector(
                 ),
             )
         }.onFailure {
+            providersReady = false
             onError("注入模拟定位失败: ${it.message ?: "未知错误"}")
         }
+    }
+
+    private fun isProviderReady(manager: LocationManager, provider: String): Boolean {
+        return runCatching {
+            manager.allProviders.contains(provider) && manager.isProviderEnabled(provider)
+        }.getOrDefault(false)
     }
 
     private fun jitterPoint(target: TargetLocation, index: Long): Pair<Double, Double> {
