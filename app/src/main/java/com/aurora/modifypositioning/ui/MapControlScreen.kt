@@ -13,7 +13,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -199,28 +198,7 @@ fun MapControlScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text("当前选点：${uiState.selectedTarget.name}")
-                Text("坐标：(${uiState.selectedTarget.latitude}, ${uiState.selectedTarget.longitude})")
                 Text("会话搜索请求数：${uiState.searchRequestCount}")
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = uiState.manualLat,
-                        onValueChange = onManualLatChanged,
-                        modifier = Modifier.weight(1f),
-                        label = { Text("纬度") },
-                        singleLine = true,
-                    )
-                    OutlinedTextField(
-                        value = uiState.manualLng,
-                        onValueChange = onManualLngChanged,
-                        modifier = Modifier.weight(1f),
-                        label = { Text("经度") },
-                        singleLine = true,
-                    )
-                    Button(onClick = onApplyManualCoordinate) {
-                        Text("应用")
-                    }
-                }
 
                 CalibrationSelector(
                     mode = uiState.calibrationMode,
