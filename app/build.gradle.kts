@@ -1,20 +1,7 @@
-import java.util.Properties
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp")
-}
-
-val localProperties = Properties().apply {
-    val localFile = rootProject.file("local.properties")
-    if (localFile.exists()) {
-        localFile.inputStream().use { load(it) }
-    }
-}
-val amapApiKeyFromGradle = (project.findProperty("AMAP_API_KEY") as String?)?.trim().orEmpty()
-val amapApiKey = amapApiKeyFromGradle.ifBlank {
-    localProperties.getProperty("AMAP_API_KEY")?.trim().orEmpty()
 }
 
 android {
@@ -32,9 +19,6 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
-
-        manifestPlaceholders["AMAP_API_KEY"] = amapApiKey
-        buildConfigField("String", "AMAP_API_KEY", "\"$amapApiKey\"")
     }
 
     buildTypes {
@@ -94,7 +78,7 @@ dependencies {
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
 
-    implementation("com.amap.api:3dmap:latest.integration")
+    implementation("org.osmdroid:osmdroid-android:6.1.20")
 
     implementation(platform("androidx.compose:compose-bom:2024.09.03"))
     implementation("androidx.compose.ui:ui")

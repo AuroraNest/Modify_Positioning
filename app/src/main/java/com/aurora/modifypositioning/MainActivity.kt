@@ -56,9 +56,6 @@ class MainActivity : ComponentActivity() {
             val placeSearchRepository = remember {
                 NominatimPlaceSearchRepository()
             }
-            val isAmapFeatureEnabled = remember {
-                BuildConfig.AMAP_API_KEY.trim().isNotEmpty()
-            }
 
             val mapViewModel: MapControlViewModel = viewModel(
                 factory = MapControlViewModelFactory(
@@ -74,7 +71,7 @@ class MainActivity : ComponentActivity() {
             var isMockAppSelected by remember { mutableStateOf(false) }
             var missingPermissions by remember { mutableStateOf(emptyList<String>()) }
             var screen by rememberSaveable {
-                mutableStateOf(if (isAmapFeatureEnabled) UiScreen.MAP else UiScreen.LEGACY_CONTROL)
+                mutableStateOf(UiScreen.MAP)
             }
             var diagnostics by remember {
                 mutableStateOf(
@@ -130,9 +127,6 @@ class MainActivity : ComponentActivity() {
                 if (savedTarget != null) {
                     controller.updateTarget(savedTarget)
                 }
-                if (!isAmapFeatureEnabled) {
-                    controller.onError("高德 Key 未配置，已自动回退经典控制台")
-                }
             }
 
             LaunchedEffect(showOnboarding) {
@@ -174,9 +168,6 @@ class MainActivity : ComponentActivity() {
                                 onSearchQueryChanged = { mapViewModel.onSearchQueryChanged(it) },
                                 onSuggestionSelected = { mapViewModel.onSuggestionSelected(it) },
                                 onMapDraggedSelection = { lat, lng -> mapViewModel.onMapDraggedSelection(lat, lng) },
-                                onManualLatChanged = { mapViewModel.onManualLatChanged(it) },
-                                onManualLngChanged = { mapViewModel.onManualLngChanged(it) },
-                                onApplyManualCoordinate = { mapViewModel.applyManualCoordinate() },
                                 onCalibrationModeChanged = { mapViewModel.setCalibrationMode(it) },
                                 onAddFavorite = { mapViewModel.addFavoriteFromCurrent() },
                                 onFavoriteNameInputChanged = { mapViewModel.onFavoriteNameInputChanged(it) },
@@ -222,7 +213,7 @@ class MainActivity : ComponentActivity() {
                                 snapshot = diagnostics,
                                 onRefresh = { refreshDiagnostics() },
                                 onBack = {
-                                    screen = if (isAmapFeatureEnabled) UiScreen.MAP else UiScreen.LEGACY_CONTROL
+                                    screen = UiScreen.MAP
                                 },
                             )
                         }

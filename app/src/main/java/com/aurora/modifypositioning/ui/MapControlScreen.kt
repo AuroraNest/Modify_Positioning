@@ -1,5 +1,6 @@
 package com.aurora.modifypositioning.ui
 
+import android.preference.PreferenceManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +22,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,11 +33,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.amap.api.maps.AMap
-import com.amap.api.maps.CameraUpdateFactory
-import com.amap.api.maps.MapView
-import com.amap.api.maps.MapsInitializer
-import com.amap.api.maps.model.LatLng
 import com.aurora.modifypositioning.model.CoordinateCalibrationMode
 import com.aurora.modifypositioning.model.FavoriteLocation
 import com.aurora.modifypositioning.model.PlaceSuggestion
@@ -43,7 +40,17 @@ import com.aurora.modifypositioning.model.SelectionSource
 import com.aurora.modifypositioning.ui.components.FavoriteSheet
 import com.aurora.modifypositioning.ui.components.PlaceSearchBar
 import com.aurora.modifypositioning.ui.map.MapControlUiState
+import kotlin.math.abs
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import org.osmdroid.config.Configuration
+import org.osmdroid.events.MapListener
+import org.osmdroid.events.ScrollEvent
+import org.osmdroid.events.ZoomEvent
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView
 
 @Composable
 fun MapControlScreen(
@@ -51,9 +58,6 @@ fun MapControlScreen(
     onSearchQueryChanged: (String) -> Unit,
     onSuggestionSelected: (PlaceSuggestion) -> Unit,
     onMapDraggedSelection: (Double, Double) -> Unit,
-    onManualLatChanged: (String) -> Unit,
-    onManualLngChanged: (String) -> Unit,
-    onApplyManualCoordinate: () -> Unit,
     onCalibrationModeChanged: (CoordinateCalibrationMode) -> Unit,
     onAddFavorite: () -> Unit,
     onFavoriteNameInputChanged: (String) -> Unit,
@@ -69,22 +73,38 @@ fun MapControlScreen(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
-    var suppressCameraCallback by remember { mutableStateOf(false) }
+    var idleJob by remember { mutableStateOf<Job?>(null) }
+
+    fun publishCenter(mapView: MapView) {
+        idleJob?.cancel()
+        idleJob = scope.launch {
+            delay(250)
+            val center = mapView.mapCenter
+            val lat = center.latitude
+            val lng = center.longitude
+            val zoom = mapView.zoomLevelDouble.toFloat()
+            onCameraIdle(lat, lng, zoom)
+            onMapDraggedSelection(lat, lng)
+        }
+    }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> mapViewRef?.onResume()
                 Lifecycle.Event.ON_PAUSE -> mapViewRef?.onPause()
+                Lifecycle.Event.ON_DESTROY -> mapViewRef?.onDetach()
                 else -> Unit
             }
         }
+
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            mapViewRef?.onPause()
-            mapViewRef?.onDestroy()
+            idleJob?.cancel()
+            mapViewRef?.onDetach()
             mapViewRef = null
         }
     }
@@ -100,15 +120,18 @@ fun MapControlScreen(
             return@LaunchedEffect
         }
 
-        suppressCameraCallback = true
-        mapView.map.animateCamera(
-            CameraUpdateFactory.newLatLngZoom(
-                LatLng(uiState.selectedTarget.latitude, uiState.selectedTarget.longitude),
-                uiState.camera.zoom,
-            ),
-        )
-        delay(420)
-        suppressCameraCallback = false
+        val desired = GeoPoint(uiState.selectedTarget.latitude, uiState.selectedTarget.longitude)
+        val current = mapView.mapCenter
+        if (
+            abs(current.latitude - desired.latitude) > 0.000001 ||
+            abs(current.longitude - desired.longitude) > 0.000001
+        ) {
+            mapView.controller.animateTo(desired)
+        }
+
+        if (abs(mapView.zoomLevelDouble - uiState.camera.zoom.toDouble()) > 0.05) {
+            mapView.controller.setZoom(uiState.camera.zoom.toDouble())
+        }
     }
 
     Column(
@@ -117,7 +140,7 @@ fun MapControlScreen(
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("高德地图精细选点控制台", style = MaterialTheme.typography.headlineSmall)
+        Text("地图精细选点控制台", style = MaterialTheme.typography.headlineSmall)
 
         Box(
             modifier = Modifier
@@ -127,46 +150,37 @@ fun MapControlScreen(
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = {
-                    MapsInitializer.updatePrivacyShow(context, true, true)
-                    MapsInitializer.updatePrivacyAgree(context, true)
+                    Configuration.getInstance().load(
+                        context,
+                        PreferenceManager.getDefaultSharedPreferences(context),
+                    )
+                    Configuration.getInstance().userAgentValue = context.packageName
 
                     MapView(context).apply {
-                        onCreate(null)
-                        onResume()
-                        val aMap = map
-                        aMap.uiSettings.isZoomControlsEnabled = false
-                        aMap.uiSettings.isMyLocationButtonEnabled = false
-                        aMap.uiSettings.isScaleControlsEnabled = false
-                        aMap.moveCamera(
-                            CameraUpdateFactory.newLatLngZoom(
-                                LatLng(uiState.camera.lat, uiState.camera.lng),
-                                uiState.camera.zoom,
-                            ),
-                        )
-                        aMap.setOnCameraChangeListener(
-                            object : AMap.OnCameraChangeListener {
-                                override fun onCameraChange(position: com.amap.api.maps.model.CameraPosition?) {
-                                    // no-op
+                        setTileSource(TileSourceFactory.MAPNIK)
+                        setMultiTouchControls(true)
+                        isTilesScaledToDpi = true
+                        controller.setZoom(uiState.camera.zoom.toDouble())
+                        controller.setCenter(GeoPoint(uiState.camera.lat, uiState.camera.lng))
+                        addMapListener(
+                            object : MapListener {
+                                override fun onScroll(event: ScrollEvent): Boolean {
+                                    if (!this@apply.isAnimating) {
+                                        publishCenter(this@apply)
+                                    }
+                                    return true
                                 }
 
-                                override fun onCameraChangeFinish(position: com.amap.api.maps.model.CameraPosition?) {
-                                    if (suppressCameraCallback || position == null) {
-                                        return
+                                override fun onZoom(event: ZoomEvent): Boolean {
+                                    if (!this@apply.isAnimating) {
+                                        publishCenter(this@apply)
                                     }
-                                    onCameraIdle(
-                                        position.target.latitude,
-                                        position.target.longitude,
-                                        position.zoom,
-                                    )
-                                    onMapDraggedSelection(
-                                        position.target.latitude,
-                                        position.target.longitude,
-                                    )
+                                    return true
                                 }
                             },
                         )
-                    }.also {
-                        mapViewRef = it
+                    }.also { createdMapView ->
+                        mapViewRef = createdMapView
                     }
                 },
                 update = { updatedMapView ->

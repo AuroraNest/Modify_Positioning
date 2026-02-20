@@ -9,12 +9,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.aurora.modifypositioning.model.PlaceSuggestion
 
@@ -35,8 +38,20 @@ fun PlaceSearchBar(
             value = query,
             onValueChange = onQueryChanged,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("输入位置（地址搜索）") },
+            label = { Text("输入位置（地址搜索）", color = Color(0xFF1F2937)) },
             singleLine = true,
+            textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color(0xFF111827)),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = Color.White,
+                unfocusedContainerColor = Color.White,
+                focusedTextColor = Color(0xFF111827),
+                unfocusedTextColor = Color(0xFF111827),
+                focusedBorderColor = Color(0xFF2563EB),
+                unfocusedBorderColor = Color(0xFF94A3B8),
+                focusedLabelColor = Color(0xFF1F2937),
+                unfocusedLabelColor = Color(0xFF475569),
+                cursorColor = Color(0xFF2563EB),
+            ),
             trailingIcon = {
                 if (isSearching) {
                     CircularProgressIndicator(
@@ -57,7 +72,10 @@ fun PlaceSearchBar(
         }
 
         if (suggestions.isNotEmpty()) {
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+            ) {
                 LazyColumn(modifier = Modifier.fillMaxWidth()) {
                     items(suggestions) { item ->
                         Column(
@@ -66,9 +84,17 @@ fun PlaceSearchBar(
                                 .clickable { onSelectSuggestion(item) }
                                 .padding(horizontal = 12.dp, vertical = 10.dp),
                         ) {
-                            Text(item.title, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                item.title,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color(0xFF111827),
+                            )
                             if (item.subtitle.isNotBlank()) {
-                                Text(item.subtitle, style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    item.subtitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFF334155),
+                                )
                             }
                         }
                     }
