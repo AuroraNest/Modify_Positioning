@@ -1,8 +1,24 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp")
 }
+
+val localProperties = Properties().apply {
+    val localFile = rootProject.file("local.properties")
+    if (localFile.exists()) {
+        localFile.inputStream().use { load(it) }
+    }
+}
+
+val amapWebApiKeyFromGradle = (project.findProperty("AMAP_WEB_API_KEY") as String?)?.trim().orEmpty()
+val amapApiKeyFromGradle = (project.findProperty("AMAP_API_KEY") as String?)?.trim().orEmpty()
+val amapWebApiKey = amapWebApiKeyFromGradle
+    .ifBlank { localProperties.getProperty("AMAP_WEB_API_KEY")?.trim().orEmpty() }
+    .ifBlank { amapApiKeyFromGradle }
+    .ifBlank { localProperties.getProperty("AMAP_API_KEY")?.trim().orEmpty() }
 
 android {
     namespace = "com.aurora.modifypositioning"
@@ -19,6 +35,7 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+        buildConfigField("String", "AMAP_WEB_API_KEY", "\"$amapWebApiKey\"")
     }
 
     buildTypes {

@@ -18,8 +18,12 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aurora.modifypositioning.data.FavoriteLocationRepository
+import com.aurora.modifypositioning.data.FallbackPlaceSearchRemote
 import com.aurora.modifypositioning.data.MapPreferencesStore
 import com.aurora.modifypositioning.data.NominatimPlaceSearchRepository
+import com.aurora.modifypositioning.data.AmapInputTipsRemoteClient
+import com.aurora.modifypositioning.data.NominatimRemoteClient
+import com.aurora.modifypositioning.data.PhotonPlaceSearchRemoteClient
 import com.aurora.modifypositioning.data.local.LocationDatabase
 import com.aurora.modifypositioning.domain.MockControllerStore
 import com.aurora.modifypositioning.service.MockLocationService
@@ -55,7 +59,15 @@ class MainActivity : ComponentActivity() {
             }
 
             val placeSearchRepository = remember {
-                NominatimPlaceSearchRepository()
+                NominatimPlaceSearchRepository(
+                    remote = FallbackPlaceSearchRemote(
+                        remotes = listOf(
+                            AmapInputTipsRemoteClient(BuildConfig.AMAP_WEB_API_KEY),
+                            NominatimRemoteClient(),
+                            PhotonPlaceSearchRemoteClient(),
+                        ),
+                    ),
+                )
             }
 
             val mapViewModel: MapControlViewModel = viewModel(

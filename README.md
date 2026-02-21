@@ -4,9 +4,9 @@
 
 ## 当前能力
 
-- 地图精细选点控制台（OSM）：
+- 地图精细选点控制台（高德路网默认 + OSM 备用）：
   - 地图拖动十字准星选点
-  - 输入地址联想搜索（Nominatim）
+  - 输入地址联想搜索（高德 Web API / Nominatim / Photon 自动兜底）
 - 收藏点管理：新增 / 重命名 / 删除 / 一键使用
 - 坐标校准开关：关闭 / 中国大陆兼容
 - 前台服务持续注入定位，支持开始 / 暂停 / 停止
@@ -17,6 +17,14 @@
 - Android Studio Iguana+
 - JDK 17
 - Android 10 (API 29) 及以上
+
+## 可选配置（提高搜索稳定性）
+
+在项目根目录 `local.properties` 增加（与 Android Key 可同值）：
+
+```properties
+AMAP_WEB_API_KEY=你的高德Web服务Key
+```
 
 ## 构建与安装
 

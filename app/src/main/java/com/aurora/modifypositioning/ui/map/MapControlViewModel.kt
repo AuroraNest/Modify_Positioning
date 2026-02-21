@@ -66,7 +66,7 @@ class MapControlViewModel(
                 it.copy(
                     suggestions = emptyList(),
                     isSearching = false,
-                    searchError = "当前未启用 Google 搜索",
+                    searchError = "搜索服务未就绪",
                 )
             }
             return
