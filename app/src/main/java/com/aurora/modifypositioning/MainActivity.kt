@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aurora.modifypositioning.data.FavoriteLocationRepository
 import com.aurora.modifypositioning.data.FallbackPlaceSearchRemote
@@ -39,7 +40,7 @@ import com.aurora.modifypositioning.ui.movement.MovementViewModelFactory
 import com.aurora.modifypositioning.ui.theme.ModifyPositioningTheme
 import com.aurora.modifypositioning.util.LocationDiagnosticsReader
 import com.aurora.modifypositioning.util.MockEnvironmentChecker
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -153,20 +154,20 @@ class MainActivity : ComponentActivity() {
                     ).show()
                     return
                 }
-                runBlocking {
-                    mapPreferencesStore.setMovementMode(mode)
-                }
                 controller.onMovementModeChanged(mode)
-                ContextCompat.startForegroundService(
-                    this@MainActivity,
-                    MockLocationService.startIntent(this@MainActivity),
-                )
-                val tip = if (mode == MovementMode.RANDOM_WALK) {
-                    "已开始随机步行模拟"
-                } else {
-                    "已开始修改定位"
+                lifecycleScope.launch {
+                    mapPreferencesStore.setMovementMode(mode)
+                    ContextCompat.startForegroundService(
+                        this@MainActivity,
+                        MockLocationService.startIntent(this@MainActivity),
+                    )
+                    val tip = if (mode == MovementMode.RANDOM_WALK) {
+                        "已开始随机步行模拟"
+                    } else {
+                        "已开始修改定位"
+                    }
+                    Toast.makeText(this@MainActivity, tip, Toast.LENGTH_SHORT).show()
                 }
-                Toast.makeText(this@MainActivity, tip, Toast.LENGTH_SHORT).show()
             }
 
             fun pauseMock() {
@@ -283,7 +284,6 @@ class MainActivity : ComponentActivity() {
                             MovementControlScreen(
                                 uiState = movementUiState,
                                 onStart = {
-                                    movementViewModel.setMovementMode(MovementMode.RANDOM_WALK)
                                     startMock(MovementMode.RANDOM_WALK)
                                 },
                                 onPause = { pauseMock() },
