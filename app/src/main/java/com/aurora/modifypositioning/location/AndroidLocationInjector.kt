@@ -36,21 +36,29 @@ class AndroidLocationInjector(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private var updateJob: Job? = null
+    @Volatile
     private var currentTarget: TargetLocation? = null
     private var providersReady = false
     private var tick = 0L
     private var burstRemain = 0
 
     override fun start(target: TargetLocation) {
+        updateTarget(target)
+        if (currentTarget == null) {
+            return
+        }
+        ensureProviders()
+        burstRemain = ENHANCED_STARTUP_BURST_COUNT
+        startLoop()
+        inject(target)
+    }
+
+    override fun updateTarget(target: TargetLocation) {
         if (!target.isValid()) {
             onError("目标坐标无效")
             return
         }
         currentTarget = target
-        ensureProviders()
-        burstRemain = ENHANCED_STARTUP_BURST_COUNT
-        startLoop()
-        inject(target)
     }
 
     override fun pause() {

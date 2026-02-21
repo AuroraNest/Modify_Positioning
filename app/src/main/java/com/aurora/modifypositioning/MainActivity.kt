@@ -25,16 +25,21 @@ import com.aurora.modifypositioning.data.NominatimRemoteClient
 import com.aurora.modifypositioning.data.PhotonPlaceSearchRemoteClient
 import com.aurora.modifypositioning.data.local.LocationDatabase
 import com.aurora.modifypositioning.domain.MockControllerStore
+import com.aurora.modifypositioning.model.MovementMode
 import com.aurora.modifypositioning.service.MockLocationService
 import com.aurora.modifypositioning.ui.DiagnosticScreen
 import com.aurora.modifypositioning.ui.MainControlScreen
 import com.aurora.modifypositioning.ui.MapControlScreen
+import com.aurora.modifypositioning.ui.MovementControlScreen
 import com.aurora.modifypositioning.ui.OnboardingScreen
 import com.aurora.modifypositioning.ui.map.MapControlViewModel
 import com.aurora.modifypositioning.ui.map.MapControlViewModelFactory
+import com.aurora.modifypositioning.ui.movement.MovementViewModel
+import com.aurora.modifypositioning.ui.movement.MovementViewModelFactory
 import com.aurora.modifypositioning.ui.theme.ModifyPositioningTheme
 import com.aurora.modifypositioning.util.LocationDiagnosticsReader
 import com.aurora.modifypositioning.util.MockEnvironmentChecker
+import kotlinx.coroutines.runBlocking
 
 class MainActivity : ComponentActivity() {
 
@@ -51,6 +56,11 @@ class MainActivity : ComponentActivity() {
             val statusText by controller.statusText.collectAsState()
             val target by controller.target.collectAsState()
             val lastInjection by controller.lastInjection.collectAsState()
+            val movementMode by controller.movementMode.collectAsState()
+            val movementState by controller.movementState.collectAsState()
+            val movementCurrentSpeedMps by controller.movementCurrentSpeedMps.collectAsState()
+            val movementDistanceFromCenterMeters by controller.movementDistanceFromCenterMeters.collectAsState()
+            val movementTrace by controller.movementTrace.collectAsState()
 
             val mapPreferencesStore = remember { MapPreferencesStore(this@MainActivity) }
             val favoriteRepository = remember {
@@ -77,6 +87,13 @@ class MainActivity : ComponentActivity() {
                 ),
             )
             val mapUiState by mapViewModel.uiState.collectAsState()
+            val movementViewModel: MovementViewModel = viewModel(
+                factory = MovementViewModelFactory(
+                    mapPreferencesStore = mapPreferencesStore,
+                    controller = controller,
+                ),
+            )
+            val movementUiState by movementViewModel.uiState.collectAsState()
 
             var showOnboarding by rememberSaveable { mutableStateOf(!hasCompletedOnboarding) }
             var isMockAppSelected by remember { mutableStateOf(false) }
@@ -90,6 +107,11 @@ class MainActivity : ComponentActivity() {
                         context = this@MainActivity,
                         state = state,
                         lastInjection = lastInjection,
+                        movementMode = movementMode,
+                        movementState = movementState,
+                        movementCurrentSpeedMps = movementCurrentSpeedMps,
+                        movementDistanceFromCenterMeters = movementDistanceFromCenterMeters,
+                        movementTrace = movementTrace,
                         mapPreferencesStore = mapPreferencesStore,
                     ),
                 )
@@ -105,11 +127,16 @@ class MainActivity : ComponentActivity() {
                     context = this@MainActivity,
                     state = state,
                     lastInjection = lastInjection,
+                    movementMode = movementMode,
+                    movementState = movementState,
+                    movementCurrentSpeedMps = movementCurrentSpeedMps,
+                    movementDistanceFromCenterMeters = movementDistanceFromCenterMeters,
+                    movementTrace = movementTrace,
                     mapPreferencesStore = mapPreferencesStore,
                 )
             }
 
-            fun startMock() {
+            fun startMock(mode: MovementMode) {
                 refreshStatus()
                 if (missingPermissions.isNotEmpty()) {
                     controller.onError("缺少权限，请完成授权")
@@ -126,11 +153,20 @@ class MainActivity : ComponentActivity() {
                     ).show()
                     return
                 }
+                runBlocking {
+                    mapPreferencesStore.setMovementMode(mode)
+                }
+                controller.onMovementModeChanged(mode)
                 ContextCompat.startForegroundService(
                     this@MainActivity,
                     MockLocationService.startIntent(this@MainActivity),
                 )
-                Toast.makeText(this@MainActivity, "已开始修改定位", Toast.LENGTH_SHORT).show()
+                val tip = if (mode == MovementMode.RANDOM_WALK) {
+                    "已开始随机步行模拟"
+                } else {
+                    "已开始修改定位"
+                }
+                Toast.makeText(this@MainActivity, tip, Toast.LENGTH_SHORT).show()
             }
 
             fun pauseMock() {
@@ -162,7 +198,17 @@ class MainActivity : ComponentActivity() {
                 refreshDiagnostics()
             }
 
-            LaunchedEffect(state, lastInjection, mapUiState.searchRequestCount, mapUiState.calibrationMode) {
+            LaunchedEffect(
+                state,
+                lastInjection,
+                mapUiState.searchRequestCount,
+                mapUiState.calibrationMode,
+                movementMode,
+                movementState,
+                movementCurrentSpeedMps,
+                movementDistanceFromCenterMeters,
+                movementTrace.size,
+            ) {
                 refreshDiagnostics()
             }
 
@@ -202,9 +248,10 @@ class MainActivity : ComponentActivity() {
                                 onSelectFavorite = { mapViewModel.selectFavorite(it) },
                                 onDeleteFavorite = { mapViewModel.deleteFavorite(it) },
                                 onRenameFavorite = { item, name -> mapViewModel.renameFavorite(item, name) },
-                                onStart = { startMock() },
+                                onStart = { startMock(MovementMode.FIXED) },
                                 onPause = { pauseMock() },
                                 onStop = { stopMock() },
+                                onOpenMovement = { screen = UiScreen.MOVEMENT },
                                 onOpenGuide = { showOnboarding = true },
                                 onOpenDiagnostic = {
                                     refreshDiagnostics()
@@ -219,7 +266,7 @@ class MainActivity : ComponentActivity() {
                                 state = state,
                                 statusText = statusText,
                                 target = target,
-                                onStart = { startMock() },
+                                onStart = { startMock(MovementMode.FIXED) },
                                 onPause = { pauseMock() },
                                 onStop = { stopMock() },
                                 onOpenGuide = {
@@ -229,6 +276,19 @@ class MainActivity : ComponentActivity() {
                                     refreshDiagnostics()
                                     screen = UiScreen.DIAGNOSTIC
                                 },
+                            )
+                        }
+
+                        UiScreen.MOVEMENT -> {
+                            MovementControlScreen(
+                                uiState = movementUiState,
+                                onStart = {
+                                    movementViewModel.setMovementMode(MovementMode.RANDOM_WALK)
+                                    startMock(MovementMode.RANDOM_WALK)
+                                },
+                                onPause = { pauseMock() },
+                                onStop = { stopMock() },
+                                onBack = { screen = UiScreen.MAP },
                             )
                         }
 
@@ -271,5 +331,6 @@ class MainActivity : ComponentActivity() {
 private enum class UiScreen {
     MAP,
     LEGACY_CONTROL,
+    MOVEMENT,
     DIAGNOSTIC,
 }

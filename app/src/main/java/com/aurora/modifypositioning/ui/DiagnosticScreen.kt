@@ -19,6 +19,8 @@ import androidx.compose.ui.unit.dp
 import com.aurora.modifypositioning.model.DiagnosticLocation
 import com.aurora.modifypositioning.model.DiagnosticSnapshot
 import com.aurora.modifypositioning.model.MockState
+import com.aurora.modifypositioning.model.MovementMode
+import com.aurora.modifypositioning.model.MovementState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -71,6 +73,17 @@ fun DiagnosticScreen(
             ) {
                 Text("应用运行状态")
                 Text("服务状态：${stateLabel(snapshot.appState)}")
+                Text("移动模式：${movementModeLabel(snapshot.movementMode)}")
+                Text("移动状态：${movementStateLabel(snapshot.movementState)}")
+                Text("当前速度：${"%.2f".format(snapshot.movementCurrentSpeedMps)} m/s")
+                Text("距中心距离：${"%.1f".format(snapshot.movementDistanceFromCenterMeters)} 米")
+                Text(
+                    text = if (snapshot.movementLastPointTimeMillis == null) {
+                        "最近移动点：暂无"
+                    } else {
+                        "最近移动点：${formatTime(snapshot.movementLastPointTimeMillis)}"
+                    },
+                )
                 val injection = snapshot.lastInjection
                 if (injection == null) {
                     Text("最近注入：暂无")
@@ -138,6 +151,23 @@ private fun stateLabel(state: MockState): String {
         MockState.Running -> "运行中"
         MockState.Paused -> "已暂停"
         is MockState.Error -> "异常: ${state.message}"
+    }
+}
+
+private fun movementModeLabel(mode: MovementMode): String {
+    return when (mode) {
+        MovementMode.FIXED -> "固定定位"
+        MovementMode.RANDOM_WALK -> "随机步行"
+    }
+}
+
+private fun movementStateLabel(state: MovementState): String {
+    return when (state) {
+        MovementState.Idle -> "空闲"
+        MovementState.Walking -> "步行中"
+        MovementState.ReachedBoundary -> "已到边界"
+        MovementState.Paused -> "已暂停"
+        is MovementState.Error -> "异常: ${state.message}"
     }
 }
 

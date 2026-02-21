@@ -17,14 +17,28 @@ import com.aurora.modifypositioning.MainActivity
 import com.aurora.modifypositioning.R
 import com.aurora.modifypositioning.data.MapPreferencesStore
 import com.aurora.modifypositioning.domain.MockControllerStore
+import com.aurora.modifypositioning.domain.RandomWalkEngine
+import com.aurora.modifypositioning.domain.StepResult
 import com.aurora.modifypositioning.domain.calibration.MainlandCoordinateCalibrator
 import com.aurora.modifypositioning.location.AndroidLocationInjector
 import com.aurora.modifypositioning.model.CoordinateCalibrationMode
 import com.aurora.modifypositioning.model.DEFAULT_TARGET
 import com.aurora.modifypositioning.model.ENHANCED_UPDATE_INTERVAL_MS
 import com.aurora.modifypositioning.model.MockState
+import com.aurora.modifypositioning.model.MovementMode
+import com.aurora.modifypositioning.model.MovementPoint
+import com.aurora.modifypositioning.model.MovementState
+import com.aurora.modifypositioning.model.RandomWalkConfig
 import com.aurora.modifypositioning.model.TargetLocation
 import com.aurora.modifypositioning.util.MockEnvironmentChecker
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
 class MockLocationService : Service() {
@@ -33,6 +47,10 @@ class MockLocationService : Service() {
     private val controller = MockControllerStore.instance
     private lateinit var mapPreferencesStore: MapPreferencesStore
     private val coordinateCalibrator = MainlandCoordinateCalibrator()
+    private val randomWalkEngine = RandomWalkEngine()
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    private var movementJob: Job? = null
     private var explicitStop = false
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -63,12 +81,14 @@ class MockLocationService : Service() {
                 setKeepRunning(true)
                 handleStart()
             }
+
             ACTION_PAUSE -> handlePause()
             ACTION_STOP -> {
                 explicitStop = true
                 setKeepRunning(false)
                 handleStop()
             }
+
             else -> {
                 if (shouldKeepRunning()) {
                     handleStart()
@@ -96,12 +116,134 @@ class MockLocationService : Service() {
 
         val selectedTarget = runBlocking { mapPreferencesStore.getTargetOrNull() } ?: DEFAULT_TARGET
         val calibrationMode = runBlocking { mapPreferencesStore.getCalibrationMode() }
-        val injectTarget = buildInjectTarget(selectedTarget, calibrationMode)
+        val movementMode = runBlocking { mapPreferencesStore.getMovementMode() }
+        val resumingMovement = movementMode == MovementMode.RANDOM_WALK &&
+            controller.movementState.value == MovementState.Paused &&
+            controller.movementTrace.value.isNotEmpty()
 
-        injector.start(injectTarget)
+        stopMovementLoop()
+
+        val movementCenterTarget = if (resumingMovement) {
+            controller.movementCenter.value
+        } else {
+            selectedTarget
+        }
+        val movementStartTarget = if (resumingMovement) {
+            controller.target.value
+        } else {
+            selectedTarget
+        }
+
+        val initialInjectTarget = buildInjectTarget(movementStartTarget, calibrationMode)
+        injector.start(initialInjectTarget)
+        controller.onServiceStarted(movementStartTarget)
         acquireWakeLock()
-        controller.onServiceStarted(selectedTarget)
+
+        if (movementMode == MovementMode.RANDOM_WALK) {
+            val config = runBlocking { mapPreferencesStore.getRandomWalkConfig() }
+            controller.onMovementModeChanged(MovementMode.RANDOM_WALK)
+            if (resumingMovement) {
+                controller.onMovementResumed()
+            } else {
+                controller.onMovementStarted(
+                    centerTarget = movementCenterTarget,
+                    startPoint = MovementPoint(
+                        lat = movementStartTarget.latitude,
+                        lng = movementStartTarget.longitude,
+                        timestampMs = System.currentTimeMillis(),
+                    ),
+                )
+            }
+            startMovementLoop(
+                centerTarget = movementCenterTarget,
+                currentTarget = movementStartTarget,
+                calibrationMode = calibrationMode,
+                config = config,
+            )
+        } else {
+            controller.onMovementModeChanged(MovementMode.FIXED)
+        }
+
         refreshNotification()
+    }
+
+    private fun startMovementLoop(
+        centerTarget: TargetLocation,
+        currentTarget: TargetLocation,
+        calibrationMode: CoordinateCalibrationMode,
+        config: RandomWalkConfig,
+    ) {
+        val normalized = config.normalized()
+        val center = MovementPoint(
+            lat = centerTarget.latitude,
+            lng = centerTarget.longitude,
+            timestampMs = System.currentTimeMillis(),
+        )
+        movementJob = serviceScope.launch {
+            var current = MovementPoint(
+                lat = currentTarget.latitude,
+                lng = currentTarget.longitude,
+                timestampMs = System.currentTimeMillis(),
+            )
+            var heading: Double? = null
+
+            while (isActive) {
+                delay(normalized.stepIntervalMs)
+                val step = randomWalkEngine.nextStep(
+                    center = center,
+                    current = current,
+                    previousHeadingDeg = heading,
+                    config = normalized,
+                    nowMs = System.currentTimeMillis(),
+                )
+
+                when (step) {
+                    is StepResult.Moved -> {
+                        current = step.point
+                        heading = step.headingDeg
+                        val displayTarget = TargetLocation(
+                            name = "随机步行",
+                            latitude = step.point.lat,
+                            longitude = step.point.lng,
+                        )
+                        val injectTarget = buildInjectTarget(displayTarget, calibrationMode)
+                        injector.updateTarget(injectTarget)
+                        controller.updateTarget(displayTarget)
+                        controller.onMovementProgress(
+                            point = step.point,
+                            speedMps = step.speedMps,
+                            distanceFromCenterMeters = step.distanceFromCenterMeters,
+                        )
+                        refreshNotification()
+                    }
+
+                    is StepResult.ReachedBoundary -> {
+                        current = step.point
+                        val displayTarget = TargetLocation(
+                            name = "随机步行",
+                            latitude = step.point.lat,
+                            longitude = step.point.lng,
+                        )
+                        val injectTarget = buildInjectTarget(displayTarget, calibrationMode)
+                        injector.updateTarget(injectTarget)
+                        controller.updateTarget(displayTarget)
+                        controller.onMovementProgress(
+                            point = step.point,
+                            speedMps = step.speedMps,
+                            distanceFromCenterMeters = step.distanceFromCenterMeters,
+                        )
+                        controller.onMovementReachedBoundary(step.distanceFromCenterMeters)
+                        refreshNotification()
+                        break
+                    }
+                }
+            }
+        }
+    }
+
+    private fun stopMovementLoop() {
+        movementJob?.cancel()
+        movementJob = null
     }
 
     private fun buildInjectTarget(
@@ -120,13 +262,19 @@ class MockLocationService : Service() {
         if (controller.state.value == MockState.Idle) {
             return
         }
-        injector.pause()
-        releaseWakeLock()
+        stopMovementLoop()
+        if (controller.movementMode.value == MovementMode.RANDOM_WALK) {
+            controller.onMovementPaused()
+        } else {
+            injector.pause()
+            releaseWakeLock()
+        }
         controller.onServicePaused()
         refreshNotification()
     }
 
     private fun handleStop() {
+        stopMovementLoop()
         injector.stop()
         releaseWakeLock()
         controller.onServiceStopped()
@@ -142,8 +290,10 @@ class MockLocationService : Service() {
     }
 
     override fun onDestroy() {
+        stopMovementLoop()
         injector.dispose()
         releaseWakeLock()
+        serviceScope.cancel()
         if (!explicitStop && shouldKeepRunning()) {
             ContextCompat.startForegroundService(this, startIntent(this))
         }
@@ -193,7 +343,19 @@ class MockLocationService : Service() {
 
     private fun resolveContentText(): String {
         return when (val state = controller.state.value) {
-            MockState.Running -> getRunningContentText()
+            MockState.Running -> {
+                if (controller.movementMode.value == MovementMode.RANDOM_WALK) {
+                    when (controller.movementState.value) {
+                        MovementState.Walking -> "随机步行模拟中"
+                        MovementState.ReachedBoundary -> "已到边界，保持当前位置"
+                        MovementState.Paused -> getPausedContentText()
+                        else -> getRunningContentText()
+                    }
+                } else {
+                    getRunningContentText()
+                }
+            }
+
             MockState.Paused -> getPausedContentText()
             MockState.Idle -> "服务未运行"
             is MockState.Error -> "${getString(R.string.notification_content_error)}: ${state.message}"

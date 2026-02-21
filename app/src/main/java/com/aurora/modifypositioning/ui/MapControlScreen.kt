@@ -77,6 +77,7 @@ fun MapControlScreen(
     onStart: () -> Unit,
     onPause: () -> Unit,
     onStop: () -> Unit,
+    onOpenMovement: () -> Unit,
     onOpenGuide: () -> Unit,
     onOpenDiagnostic: () -> Unit,
     onCameraIdle: (Double, Double, Float) -> Unit,
@@ -188,12 +189,15 @@ fun MapControlScreen(
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            TextButton(onClick = onOpenGuide) {
+                            TextButton(onClick = onOpenGuide, modifier = Modifier.weight(1f)) {
                                 Text("首次引导")
                             }
-                            TextButton(onClick = onOpenDiagnostic) {
+                            TextButton(onClick = onOpenMovement, modifier = Modifier.weight(1f)) {
+                                Text("模拟移动")
+                            }
+                            TextButton(onClick = onOpenDiagnostic, modifier = Modifier.weight(1f)) {
                                 Text("诊断页面")
                             }
                         }

@@ -10,6 +10,9 @@ import com.aurora.modifypositioning.model.DiagnosticLocation
 import com.aurora.modifypositioning.model.DiagnosticSnapshot
 import com.aurora.modifypositioning.model.InjectionReport
 import com.aurora.modifypositioning.model.MockState
+import com.aurora.modifypositioning.model.MovementMode
+import com.aurora.modifypositioning.model.MovementPoint
+import com.aurora.modifypositioning.model.MovementState
 import kotlinx.coroutines.runBlocking
 
 object LocationDiagnosticsReader {
@@ -18,6 +21,11 @@ object LocationDiagnosticsReader {
         context: Context,
         state: MockState,
         lastInjection: InjectionReport?,
+        movementMode: MovementMode,
+        movementState: MovementState,
+        movementCurrentSpeedMps: Double,
+        movementDistanceFromCenterMeters: Double,
+        movementTrace: List<MovementPoint>,
         mapPreferencesStore: MapPreferencesStore,
     ): DiagnosticSnapshot {
         val missingPermissions = MockEnvironmentChecker.missingPermissions(context)
@@ -51,6 +59,11 @@ object LocationDiagnosticsReader {
             networkLastKnown = network,
             appState = state,
             lastInjection = lastInjection,
+            movementMode = movementMode,
+            movementState = movementState,
+            movementCurrentSpeedMps = movementCurrentSpeedMps,
+            movementDistanceFromCenterMeters = movementDistanceFromCenterMeters,
+            movementLastPointTimeMillis = movementTrace.lastOrNull()?.timestampMs,
             calibrationMode = calibrationMode,
             searchRequestCount = AppSessionMetrics.searchRequests,
         )

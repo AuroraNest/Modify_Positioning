@@ -19,6 +19,11 @@ data class DiagnosticSnapshot(
     val networkLastKnown: DiagnosticLocation?,
     val appState: MockState,
     val lastInjection: InjectionReport?,
+    val movementMode: MovementMode,
+    val movementState: MovementState,
+    val movementCurrentSpeedMps: Double,
+    val movementDistanceFromCenterMeters: Double,
+    val movementLastPointTimeMillis: Long?,
     val calibrationMode: CoordinateCalibrationMode,
     val searchRequestCount: Int,
 )
