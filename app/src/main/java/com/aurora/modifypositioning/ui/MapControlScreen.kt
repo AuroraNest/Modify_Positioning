@@ -2,6 +2,7 @@ package com.aurora.modifypositioning.ui
 
 import android.preference.PreferenceManager
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,12 +12,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -29,8 +34,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -74,7 +81,6 @@ fun MapControlScreen(
     onOpenDiagnostic: () -> Unit,
     onCameraIdle: (Double, Double, Float) -> Unit,
 ) {
-    val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
@@ -137,143 +143,236 @@ fun MapControlScreen(
         }
     }
 
-    Scaffold(
-        bottomBar = {
+    val backgroundBrush = Brush.verticalGradient(
+        colors = listOf(
+            Color(0xFFE5EEF8),
+            Color(0xFFF6F9FD),
+        ),
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(backgroundBrush),
+    ) {
+        Scaffold(
+            containerColor = Color.Transparent,
+            bottomBar = {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 8.dp,
+                    shadowElevation = 10.dp,
+                    shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Button(onClick = onStart, modifier = Modifier.weight(1f)) {
+                                Text("开始")
+                            }
+                            FilledTonalButton(onClick = onPause, modifier = Modifier.weight(1f)) {
+                                Text("暂停")
+                            }
+                            OutlinedButton(onClick = onStop, modifier = Modifier.weight(1f)) {
+                                Text("停止")
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            TextButton(onClick = onOpenGuide) {
+                                Text("首次引导")
+                            }
+                            TextButton(onClick = onOpenDiagnostic) {
+                                Text("诊断页面")
+                            }
+                        }
+                    }
+                }
+            },
+        ) { innerPadding ->
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(horizontal = 12.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Row(
+                Card(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F2942)),
                 ) {
-                    Button(onClick = onStart, modifier = Modifier.weight(1f)) {
-                        Text("开始")
-                    }
-                    OutlinedButton(onClick = onPause, modifier = Modifier.weight(1f)) {
-                        Text("暂停")
-                    }
-                    OutlinedButton(onClick = onStop, modifier = Modifier.weight(1f)) {
-                        Text("停止")
-                    }
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    TextButton(onClick = onOpenGuide) {
-                        Text("首次引导")
-                    }
-                    TextButton(onClick = onOpenDiagnostic) {
-                        Text("诊断页面")
-                    }
-                }
-            }
-        },
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 12.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text("地图精细选点控制台", style = MaterialTheme.typography.headlineSmall)
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(320.dp),
-            ) {
-                AndroidView(
-                    modifier = Modifier.fillMaxSize(),
-                    factory = {
-                        Configuration.getInstance().load(
-                            context,
-                            PreferenceManager.getDefaultSharedPreferences(context),
+                    Column(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = "地图精细选点控制台",
+                            color = Color.White,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold,
                         )
-                        Configuration.getInstance().userAgentValue = context.packageName
+                        Text(
+                            text = "拖动地图后停 0.5 秒，再点开始即可生效",
+                            color = Color(0xFFBED7F0),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
 
-                        MapView(context).apply {
-                            setTileSource(TileSourceFactory.MAPNIK)
-                            setMultiTouchControls(true)
-                            isTilesScaledToDpi = true
-                            controller.setZoom(uiState.camera.zoom.toDouble())
-                            controller.setCenter(GeoPoint(uiState.camera.lat, uiState.camera.lng))
-                            addMapListener(
-                                object : MapListener {
-                                    override fun onScroll(event: ScrollEvent): Boolean {
-                                        if (!this@apply.isAnimating) {
-                                            publishCenter(this@apply)
-                                        }
-                                        return true
-                                    }
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(330.dp),
+                    shape = RoundedCornerShape(18.dp),
+                ) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        AndroidMap(
+                            uiState = uiState,
+                            publishCenter = { mapView -> publishCenter(mapView) },
+                            onMapCreated = { mapViewRef = it },
+                            onMapUpdated = { mapViewRef = it },
+                        )
 
-                                    override fun onZoom(event: ZoomEvent): Boolean {
-                                        if (!this@apply.isAnimating) {
-                                            publishCenter(this@apply)
-                                        }
-                                        return true
-                                    }
-                                },
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(12.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xCC0F2942))
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                        ) {
+                            Text(
+                                text = "十字中心点就是目标",
+                                color = Color.White,
+                                style = MaterialTheme.typography.bodySmall,
                             )
-                        }.also { createdMapView ->
-                            mapViewRef = createdMapView
                         }
-                    },
-                    update = { updatedMapView ->
-                        mapViewRef = updatedMapView
-                    },
+
+                        Text(
+                            text = "+",
+                            modifier = Modifier.align(Alignment.Center),
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = Color(0xFFE53935),
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+
+                PlaceSearchBar(
+                    query = uiState.searchQuery,
+                    suggestions = uiState.suggestions,
+                    isSearching = uiState.isSearching,
+                    searchError = uiState.searchError,
+                    onQueryChanged = onSearchQueryChanged,
+                    onSelectSuggestion = onSuggestionSelected,
                 )
 
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .background(Color.Transparent),
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
                 ) {
-                    Text("+", style = MaterialTheme.typography.headlineMedium, color = Color.Red)
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = "当前选点：${uiState.selectedTarget.name}",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            text = "会话搜索请求数：${uiState.searchRequestCount}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        CalibrationSelector(
+                            mode = uiState.calibrationMode,
+                            onModeChanged = onCalibrationModeChanged,
+                        )
+                    }
                 }
+
+                FavoriteSheet(
+                    favorites = uiState.favorites,
+                    favoriteNameInput = uiState.favoriteNameInput,
+                    onFavoriteNameInputChanged = onFavoriteNameInputChanged,
+                    onAddFavorite = onAddFavorite,
+                    onSelectFavorite = onSelectFavorite,
+                    onDeleteFavorite = onDeleteFavorite,
+                    onRenameFavorite = onRenameFavorite,
+                )
             }
-
-            PlaceSearchBar(
-                query = uiState.searchQuery,
-                suggestions = uiState.suggestions,
-                isSearching = uiState.isSearching,
-                searchError = uiState.searchError,
-                onQueryChanged = onSearchQueryChanged,
-                onSelectSuggestion = onSuggestionSelected,
-            )
-
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text("当前选点：${uiState.selectedTarget.name}")
-                    Text("会话搜索请求数：${uiState.searchRequestCount}")
-
-                    CalibrationSelector(
-                        mode = uiState.calibrationMode,
-                        onModeChanged = onCalibrationModeChanged,
-                    )
-                }
-            }
-
-            FavoriteSheet(
-                favorites = uiState.favorites,
-                favoriteNameInput = uiState.favoriteNameInput,
-                onFavoriteNameInputChanged = onFavoriteNameInputChanged,
-                onAddFavorite = onAddFavorite,
-                onSelectFavorite = onSelectFavorite,
-                onDeleteFavorite = onDeleteFavorite,
-                onRenameFavorite = onRenameFavorite,
-            )
         }
     }
+}
+
+@Composable
+private fun AndroidMap(
+    uiState: MapControlUiState,
+    publishCenter: (MapView) -> Unit,
+    onMapCreated: (MapView) -> Unit,
+    onMapUpdated: (MapView) -> Unit,
+) {
+    AndroidView(
+        modifier = Modifier
+            .fillMaxSize()
+            .border(
+                width = 1.dp,
+                color = Color(0xFFCFDCE9),
+                shape = RoundedCornerShape(18.dp),
+            )
+            .clip(RoundedCornerShape(18.dp)),
+        factory = { context ->
+            Configuration.getInstance().load(
+                context,
+                PreferenceManager.getDefaultSharedPreferences(context),
+            )
+            Configuration.getInstance().userAgentValue = context.packageName
+
+            MapView(context).apply {
+                setTileSource(TileSourceFactory.MAPNIK)
+                setMultiTouchControls(true)
+                isTilesScaledToDpi = true
+                setBuiltInZoomControls(false)
+                controller.setZoom(uiState.camera.zoom.toDouble())
+                controller.setCenter(GeoPoint(uiState.camera.lat, uiState.camera.lng))
+                addMapListener(
+                    object : MapListener {
+                        override fun onScroll(event: ScrollEvent): Boolean {
+                            if (!this@apply.isAnimating) {
+                                publishCenter(this@apply)
+                            }
+                            return true
+                        }
+
+                        override fun onZoom(event: ZoomEvent): Boolean {
+                            if (!this@apply.isAnimating) {
+                                publishCenter(this@apply)
+                            }
+                            return true
+                        }
+                    },
+                )
+            }.also { createdMapView ->
+                onMapCreated(createdMapView)
+            }
+        },
+        update = { updatedMapView ->
+            onMapUpdated(updatedMapView)
+        },
+    )
 }
 
 @Composable
@@ -282,23 +381,23 @@ private fun CalibrationSelector(
     onModeChanged: (CoordinateCalibrationMode) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("坐标校准")
+        Text("坐标校准", style = MaterialTheme.typography.titleSmall)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(
+            FilledTonalButton(
                 onClick = { onModeChanged(CoordinateCalibrationMode.OFF) },
                 modifier = Modifier.weight(1f),
             ) {
                 Text(if (mode == CoordinateCalibrationMode.OFF) "已选：关闭" else "关闭")
             }
-            OutlinedButton(
+            FilledTonalButton(
                 onClick = { onModeChanged(CoordinateCalibrationMode.MAINLAND_CHINA_COMPAT) },
                 modifier = Modifier.weight(1f),
             ) {
                 Text(
                     if (mode == CoordinateCalibrationMode.MAINLAND_CHINA_COMPAT) {
-                        "已选：中国大陆兼容"
+                        "已选：大陆兼容"
                     } else {
-                        "中国大陆兼容"
+                        "大陆兼容"
                     },
                 )
             }

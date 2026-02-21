@@ -1,11 +1,14 @@
 package com.aurora.modifypositioning.ui.components
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -15,7 +18,6 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.aurora.modifypositioning.model.PlaceSuggestion
 
@@ -36,19 +38,21 @@ fun PlaceSearchBar(
             value = query,
             onValueChange = onQueryChanged,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("输入位置（地址搜索）", color = Color(0xFF1F2937)) },
+            label = { Text("输入位置（地址搜索）") },
+            placeholder = { Text("例如：上海外滩、东京塔、Times Square") },
             singleLine = true,
-            textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color(0xFF111827)),
+            shape = RoundedCornerShape(14.dp),
+            textStyle = MaterialTheme.typography.bodyLarge,
             colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = Color.White,
-                unfocusedContainerColor = Color.White,
-                focusedTextColor = Color(0xFF111827),
-                unfocusedTextColor = Color(0xFF111827),
-                focusedBorderColor = Color(0xFF2563EB),
-                unfocusedBorderColor = Color(0xFF94A3B8),
-                focusedLabelColor = Color(0xFF1F2937),
-                unfocusedLabelColor = Color(0xFF475569),
-                cursorColor = Color(0xFF2563EB),
+                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                focusedLabelColor = MaterialTheme.colorScheme.primary,
+                unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                cursorColor = MaterialTheme.colorScheme.primary,
             ),
             trailingIcon = {
                 if (isSearching) {
@@ -56,48 +60,71 @@ fun PlaceSearchBar(
                         modifier = Modifier
                             .padding(8.dp)
                             .size(18.dp),
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
             },
         )
 
         if (searchError != null) {
-            Text(
-                text = searchError,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
+            AssistChip(
+                onClick = { },
+                label = {
+                    Text(
+                        text = searchError,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                },
             )
         }
 
         if (suggestions.isNotEmpty()) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-            ) {
+            Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     suggestions.forEach { item ->
-                        Column(
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { onSelectSuggestion(item) }
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
                         ) {
-                            Text(
-                                item.title,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color(0xFF111827),
-                            )
-                            if (item.subtitle.isNotBlank()) {
-                                Text(
-                                    item.subtitle,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Color(0xFF334155),
-                                )
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                ),
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                ) {
+                                    Text(
+                                        item.title,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    if (item.subtitle.isNotBlank()) {
+                                        Text(
+                                            item.subtitle,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
+        } else if (query.trim().length >= 2 && !isSearching) {
+            Text(
+                text = "未找到匹配地点，请换个关键词",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

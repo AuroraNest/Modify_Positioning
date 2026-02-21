@@ -5,10 +5,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -32,7 +33,10 @@ fun FavoriteSheet(
     onDeleteFavorite: (FavoriteLocation) -> Unit,
     onRenameFavorite: (FavoriteLocation, String) -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+    ) {
         Column(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -45,21 +49,25 @@ fun FavoriteSheet(
                     onValueChange = onFavoriteNameInputChanged,
                     modifier = Modifier.weight(1f),
                     label = { Text("收藏名称") },
+                    placeholder = { Text("例如：微信打卡点") },
                     singleLine = true,
                 )
-                Button(onClick = onAddFavorite) {
+                Button(onClick = onAddFavorite, shape = RoundedCornerShape(12.dp)) {
                     Text("添加")
                 }
             }
 
             if (favorites.isEmpty()) {
-                Text("暂无收藏")
+                Text(
+                    "暂无收藏，先选点再添加一个吧",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             } else {
-                LazyColumn(
+                Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    items(favorites, key = { it.id }) { item ->
+                    favorites.forEach { item ->
                         FavoriteRow(
                             item = item,
                             onSelectFavorite = onSelectFavorite,
@@ -83,13 +91,23 @@ private fun FavoriteRow(
     var renameMode by remember(item.id) { mutableStateOf(false) }
     var renameText by remember(item.id) { mutableStateOf(item.name) }
 
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+    ) {
         Column(
             modifier = Modifier.padding(10.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(item.name, style = MaterialTheme.typography.bodyMedium)
-            Text("(${item.lat}, ${item.lng})", style = MaterialTheme.typography.bodySmall)
+            Text(
+                text = String.format("纬度 %.5f，经度 %.5f", item.lat, item.lng),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
             if (renameMode) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -105,6 +123,7 @@ private fun FavoriteRow(
                             onRenameFavorite(item, renameText)
                             renameMode = false
                         },
+                        shape = RoundedCornerShape(12.dp),
                     ) {
                         Text("保存")
                     }
@@ -112,10 +131,16 @@ private fun FavoriteRow(
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { onSelectFavorite(item) }) {
+                Button(
+                    onClick = { onSelectFavorite(item) },
+                    shape = RoundedCornerShape(12.dp),
+                ) {
                     Text("使用")
                 }
-                TextButton(onClick = { renameMode = !renameMode }) {
+                FilledTonalButton(
+                    onClick = { renameMode = !renameMode },
+                    shape = RoundedCornerShape(12.dp),
+                ) {
                     Text(if (renameMode) "取消重命名" else "重命名")
                 }
                 TextButton(onClick = { onDeleteFavorite(item) }) {
