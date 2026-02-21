@@ -21,7 +21,6 @@ import com.aurora.modifypositioning.data.FavoriteLocationRepository
 import com.aurora.modifypositioning.data.FallbackPlaceSearchRemote
 import com.aurora.modifypositioning.data.MapPreferencesStore
 import com.aurora.modifypositioning.data.NominatimPlaceSearchRepository
-import com.aurora.modifypositioning.data.AmapInputTipsRemoteClient
 import com.aurora.modifypositioning.data.NominatimRemoteClient
 import com.aurora.modifypositioning.data.PhotonPlaceSearchRemoteClient
 import com.aurora.modifypositioning.data.local.LocationDatabase
@@ -62,7 +61,6 @@ class MainActivity : ComponentActivity() {
                 NominatimPlaceSearchRepository(
                     remote = FallbackPlaceSearchRemote(
                         remotes = listOf(
-                            AmapInputTipsRemoteClient(BuildConfig.AMAP_WEB_API_KEY),
                             NominatimRemoteClient(),
                             PhotonPlaceSearchRemoteClient(),
                         ),

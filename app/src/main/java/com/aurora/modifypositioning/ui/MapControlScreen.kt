@@ -31,7 +31,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,10 +58,8 @@ import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
-import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
-import org.osmdroid.util.MapTileIndex
 import org.osmdroid.views.MapView
 
 @Composable
@@ -88,7 +85,6 @@ fun MapControlScreen(
     val scope = rememberCoroutineScope()
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
     var idleJob by remember { mutableStateOf<Job?>(null) }
-    var mapTileProvider by rememberSaveable { mutableStateOf(MapTileProvider.AMAP_ROAD) }
 
     fun publishCenter(mapView: MapView) {
         idleJob?.cancel()
@@ -245,7 +241,6 @@ fun MapControlScreen(
                     Box(modifier = Modifier.fillMaxSize()) {
                         AndroidMap(
                             uiState = uiState,
-                            tileProvider = mapTileProvider,
                             publishCenter = { mapView -> publishCenter(mapView) },
                             onMapCreated = { mapViewRef = it },
                             onMapUpdated = { mapViewRef = it },
@@ -272,36 +267,6 @@ fun MapControlScreen(
                             style = MaterialTheme.typography.headlineMedium,
                             color = Color(0xFFE53935),
                             fontWeight = FontWeight.Bold,
-                        )
-                    }
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    FilledTonalButton(
-                        onClick = { mapTileProvider = MapTileProvider.AMAP_ROAD },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(
-                            if (mapTileProvider == MapTileProvider.AMAP_ROAD) {
-                                "已选：高德路网"
-                            } else {
-                                "切换高德路网"
-                            },
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = { mapTileProvider = MapTileProvider.OSM_MAPNIK },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(
-                            if (mapTileProvider == MapTileProvider.OSM_MAPNIK) {
-                                "已选：OSM备用"
-                            } else {
-                                "OSM备用"
-                            },
                         )
                     }
                 }
@@ -356,7 +321,6 @@ fun MapControlScreen(
 @Composable
 private fun AndroidMap(
     uiState: MapControlUiState,
-    tileProvider: MapTileProvider,
     publishCenter: (MapView) -> Unit,
     onMapCreated: (MapView) -> Unit,
     onMapUpdated: (MapView) -> Unit,
@@ -378,7 +342,7 @@ private fun AndroidMap(
             Configuration.getInstance().userAgentValue = context.packageName
 
             MapView(context).apply {
-                setTileSource(resolveTileSource(tileProvider))
+                setTileSource(TileSourceFactory.MAPNIK)
                 setMultiTouchControls(true)
                 isTilesScaledToDpi = true
                 setBuiltInZoomControls(false)
@@ -406,46 +370,9 @@ private fun AndroidMap(
             }
         },
         update = { updatedMapView ->
-            val expectedTileSource = resolveTileSource(tileProvider)
-            if (updatedMapView.tileProvider.tileSource.name() != expectedTileSource.name()) {
-                updatedMapView.setTileSource(expectedTileSource)
-                updatedMapView.invalidate()
-            }
             onMapUpdated(updatedMapView)
         },
     )
-}
-
-private enum class MapTileProvider {
-    AMAP_ROAD,
-    OSM_MAPNIK,
-}
-
-private fun resolveTileSource(provider: MapTileProvider) = when (provider) {
-    MapTileProvider.AMAP_ROAD -> AmapRoadTileSource
-    MapTileProvider.OSM_MAPNIK -> TileSourceFactory.MAPNIK
-}
-
-private val AmapRoadTileSource = object : OnlineTileSourceBase(
-    "AMAP_ROAD",
-    3,
-    19,
-    256,
-    ".png",
-    arrayOf(
-        "https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7",
-        "https://webrd02.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7",
-        "https://webrd03.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7",
-        "https://webrd04.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7",
-    ),
-    "©AutoNavi",
-) {
-    override fun getTileURLString(pMapTileIndex: Long): String {
-        val x = MapTileIndex.getX(pMapTileIndex)
-        val y = MapTileIndex.getY(pMapTileIndex)
-        val zoom = MapTileIndex.getZoom(pMapTileIndex)
-        return "${getBaseUrl()}&x=$x&y=$y&z=$zoom"
-    }
 }
 
 @Composable

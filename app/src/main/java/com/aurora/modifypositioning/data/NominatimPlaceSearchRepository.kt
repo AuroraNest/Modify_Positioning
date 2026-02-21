@@ -134,77 +134,6 @@ class NominatimRemoteClient(
     }
 }
 
-class AmapInputTipsRemoteClient(
-    private val apiKey: String,
-    private val endpoint: String = "https://restapi.amap.com/v3/assistant/inputtips",
-) : NominatimPlaceSearchRepository.PlaceSearchRemote {
-
-    override suspend fun search(query: String): List<PlaceSuggestion> {
-        if (apiKey.isBlank()) {
-            throw IllegalStateException("搜索服务未配置可用 Key")
-        }
-        val encoded = URLEncoder.encode(query.trim(), StandardCharsets.UTF_8.name())
-        val url = "$endpoint?keywords=$encoded&datatype=all&citylimit=false&key=$apiKey"
-        val connection = (java.net.URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 5000
-            readTimeout = 5000
-            setRequestProperty("Accept", "application/json")
-            setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-        }
-
-        return try {
-            val responseCode = connection.responseCode
-            if (responseCode !in 200..299) {
-                throw IllegalStateException("搜索服务异常: HTTP $responseCode")
-            }
-            val response = connection.inputStream.bufferedReader().use { it.readText() }
-            parseResponse(response)
-        } finally {
-            connection.disconnect()
-        }
-    }
-
-    private fun parseResponse(response: String): List<PlaceSuggestion> {
-        val root = JSONObject(response)
-        if (root.optString("status") != "1") {
-            val info = root.optString("info").ifBlank { "高德搜索请求失败" }
-            throw IllegalStateException(info)
-        }
-
-        val tips = root.optJSONArray("tips") ?: JSONArray()
-        val result = mutableListOf<PlaceSuggestion>()
-        for (index in 0 until tips.length()) {
-            val item = tips.optJSONObject(index) ?: continue
-            val location = item.optString("location").trim()
-            if (!location.contains(",")) {
-                continue
-            }
-            val coordinate = location.split(",")
-            if (coordinate.size != 2) {
-                continue
-            }
-            val lng = coordinate[0].toDoubleOrNull() ?: continue
-            val lat = coordinate[1].toDoubleOrNull() ?: continue
-            val name = item.optString("name").ifBlank { "搜索结果" }
-            val district = item.optString("district").trim()
-            val address = item.optString("address").trim()
-            val subtitle = listOf(district, address)
-                .filter { it.isNotBlank() && it != "[]" }
-                .joinToString(" · ")
-            val id = item.optString("id").ifBlank { "amap_$index" }
-            result += PlaceSuggestion(
-                id = id,
-                title = name,
-                subtitle = subtitle,
-                lat = lat,
-                lng = lng,
-            )
-        }
-        return result
-    }
-}
-
 class FallbackPlaceSearchRemote(
     private val remotes: List<NominatimPlaceSearchRepository.PlaceSearchRemote>,
 ) : NominatimPlaceSearchRepository.PlaceSearchRemote {
@@ -237,7 +166,7 @@ class PhotonPlaceSearchRemoteClient(
 
     override suspend fun search(query: String): List<PlaceSuggestion> {
         val encoded = URLEncoder.encode(query.trim(), StandardCharsets.UTF_8.name())
-        val url = "$endpoint?q=$encoded&limit=5&lang=zh"
+        val url = "$endpoint?q=$encoded&limit=5"
         val connection = (java.net.URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 6000
