@@ -66,6 +66,16 @@ class NominatimPlaceSearchRepository(
         return when (throwable) {
             is SocketTimeoutException -> "搜索超时，请检查网络后重试"
             is UnknownHostException -> "网络不可用，请检查连接后重试"
+            is IllegalStateException -> {
+                val message = throwable.message.orEmpty()
+                if (message.contains("HTTP 400")) {
+                    "请求参数异常，请换个关键词再试"
+                } else if (message.contains("HTTP 403") || message.contains("HTTP 429")) {
+                    "搜索服务限流，请稍后重试"
+                } else {
+                    message.ifBlank { "搜索失败，请稍后再试" }
+                }
+            }
             else -> throwable.message ?: "搜索失败，请稍后再试"
         }
     }
@@ -201,9 +211,11 @@ class FallbackPlaceSearchRemote(
 
     override suspend fun search(query: String): List<PlaceSuggestion> {
         var lastError: Throwable? = null
+        var hasSuccessfulResponse = false
         for (remote in remotes) {
             runCatching { remote.search(query) }
                 .onSuccess { suggestions ->
+                    hasSuccessfulResponse = true
                     if (suggestions.isNotEmpty()) {
                         return suggestions
                     }
@@ -211,6 +223,9 @@ class FallbackPlaceSearchRemote(
                 .onFailure { error ->
                     lastError = error
                 }
+        }
+        if (hasSuccessfulResponse) {
+            return emptyList()
         }
         throw lastError ?: IllegalStateException("暂无可用搜索结果")
     }
