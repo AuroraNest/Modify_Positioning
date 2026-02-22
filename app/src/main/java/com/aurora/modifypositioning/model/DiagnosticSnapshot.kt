@@ -24,6 +24,12 @@ data class DiagnosticSnapshot(
     val movementCurrentSpeedMps: Double,
     val movementDistanceFromCenterMeters: Double,
     val movementLastPointTimeMillis: Long?,
+    val routeMode: MovementMode?,
+    val travelMode: TravelMode?,
+    val routeSource: RouteSource?,
+    val remainingDistanceMeters: Double?,
+    val remainingDurationSeconds: Double?,
+    val routeProgressPercent: Double?,
     val calibrationMode: CoordinateCalibrationMode,
     val searchRequestCount: Int,
 )

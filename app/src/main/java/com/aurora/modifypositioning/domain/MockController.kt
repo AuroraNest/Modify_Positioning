@@ -6,7 +6,10 @@ import com.aurora.modifypositioning.model.MockState
 import com.aurora.modifypositioning.model.MovementMode
 import com.aurora.modifypositioning.model.MovementPoint
 import com.aurora.modifypositioning.model.MovementState
+import com.aurora.modifypositioning.model.PlannedRoute
+import com.aurora.modifypositioning.model.RouteProgress
 import com.aurora.modifypositioning.model.TargetLocation
+import com.aurora.modifypositioning.model.TravelMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -44,6 +47,18 @@ class MockController(
     private val _movementDistanceFromCenterMeters = MutableStateFlow(0.0)
     val movementDistanceFromCenterMeters: StateFlow<Double> = _movementDistanceFromCenterMeters.asStateFlow()
 
+    private val _travelMode = MutableStateFlow(TravelMode.WALK)
+    val travelMode: StateFlow<TravelMode> = _travelMode.asStateFlow()
+
+    private val _plannedRoute = MutableStateFlow<PlannedRoute?>(null)
+    val plannedRoute: StateFlow<PlannedRoute?> = _plannedRoute.asStateFlow()
+
+    private val _routeProgress = MutableStateFlow<RouteProgress?>(null)
+    val routeProgress: StateFlow<RouteProgress?> = _routeProgress.asStateFlow()
+
+    private val _routeError = MutableStateFlow<String?>(null)
+    val routeError: StateFlow<String?> = _routeError.asStateFlow()
+
     fun updateTarget(targetLocation: TargetLocation) {
         _target.value = targetLocation
         if (_movementState.value == MovementState.Idle) {
@@ -54,7 +69,11 @@ class MockController(
     fun onServiceStarted(targetLocation: TargetLocation = _target.value) {
         _target.value = targetLocation
         _state.value = MockState.Running
-        _statusText.value = "正在模拟: ${targetLocation.name}"
+        _statusText.value = when (_movementMode.value) {
+            MovementMode.FIXED -> "正在模拟: ${targetLocation.name}"
+            MovementMode.RANDOM_WALK -> "随机步行中"
+            MovementMode.POINT_TO_POINT_NAV, MovementMode.CUSTOM_ROUTE -> "路线模拟中"
+        }
     }
 
     fun onServicePaused() {
@@ -76,7 +95,8 @@ class MockController(
     fun onError(message: String) {
         _state.value = MockState.Error(message)
         _statusText.value = message
-        if (_movementMode.value == MovementMode.RANDOM_WALK) {
+        _routeError.value = message
+        if (_movementMode.value != MovementMode.FIXED) {
             _movementState.value = MovementState.Error(message)
         }
     }
@@ -88,6 +108,20 @@ class MockController(
         }
     }
 
+    fun onTravelModeChanged(mode: TravelMode) {
+        _travelMode.value = mode
+    }
+
+    fun onRoutePlanned(route: PlannedRoute) {
+        _plannedRoute.value = route
+        _travelMode.value = route.mode
+        _routeError.value = null
+    }
+
+    fun onRoutePlanningError(message: String) {
+        _routeError.value = message
+    }
+
     fun onMovementStarted(centerTarget: TargetLocation, startPoint: MovementPoint) {
         _movementMode.value = MovementMode.RANDOM_WALK
         _movementCenter.value = centerTarget
@@ -95,7 +129,20 @@ class MockController(
         _movementTrace.value = listOf(startPoint)
         _movementCurrentSpeedMps.value = 0.0
         _movementDistanceFromCenterMeters.value = 0.0
+        _routeProgress.value = null
         _statusText.value = "随机步行中"
+    }
+
+    fun onRouteSimulationStarted(route: PlannedRoute, startPoint: MovementPoint, initialProgress: RouteProgress) {
+        _plannedRoute.value = route
+        _travelMode.value = route.mode
+        _movementState.value = MovementState.Walking
+        _movementTrace.value = listOf(startPoint)
+        _movementCurrentSpeedMps.value = 0.0
+        _movementDistanceFromCenterMeters.value = initialProgress.remainingMeters
+        _routeProgress.value = initialProgress
+        _routeError.value = null
+        _statusText.value = "路线模拟中"
     }
 
     fun onMovementProgress(point: MovementPoint, speedMps: Double, distanceFromCenterMeters: Double) {
@@ -112,11 +159,41 @@ class MockController(
         _statusText.value = "随机步行中"
     }
 
+    fun onRouteSimulationProgress(point: MovementPoint, speedMps: Double, progress: RouteProgress) {
+        val updated = _movementTrace.value.toMutableList().apply {
+            add(point)
+            if (size > MAX_TRACE_POINTS) {
+                removeAt(0)
+            }
+        }
+        _movementTrace.value = updated
+        _movementCurrentSpeedMps.value = speedMps
+        _movementDistanceFromCenterMeters.value = progress.remainingMeters
+        _routeProgress.value = progress
+        _movementState.value = MovementState.Walking
+        _statusText.value = "路线模拟中"
+    }
+
     fun onMovementReachedBoundary(distanceFromCenterMeters: Double) {
         _movementState.value = MovementState.ReachedBoundary
         _movementCurrentSpeedMps.value = 0.0
         _movementDistanceFromCenterMeters.value = distanceFromCenterMeters
         _statusText.value = "已到边界，移动已停止（定位保持当前点）"
+    }
+
+    fun onRouteSimulationReachedDestination(point: MovementPoint, progress: RouteProgress) {
+        val updated = _movementTrace.value.toMutableList().apply {
+            add(point)
+            if (size > MAX_TRACE_POINTS) {
+                removeAt(0)
+            }
+        }
+        _movementTrace.value = updated
+        _movementState.value = MovementState.ReachedDestination
+        _movementCurrentSpeedMps.value = 0.0
+        _movementDistanceFromCenterMeters.value = 0.0
+        _routeProgress.value = progress
+        _statusText.value = "已到终点，保持当前位置"
     }
 
     fun onMovementPaused() {
@@ -127,7 +204,11 @@ class MockController(
     fun onMovementResumed() {
         _movementState.value = MovementState.Walking
         _movementCurrentSpeedMps.value = 0.0
-        _statusText.value = "随机步行中"
+        _statusText.value = if (_movementMode.value == MovementMode.RANDOM_WALK) {
+            "随机步行中"
+        } else {
+            "路线模拟中"
+        }
     }
 
     fun onMovementStopped() {
@@ -135,6 +216,7 @@ class MockController(
         _movementTrace.value = emptyList()
         _movementCurrentSpeedMps.value = 0.0
         _movementDistanceFromCenterMeters.value = 0.0
+        _routeProgress.value = null
     }
 
     companion object {
@@ -145,3 +227,4 @@ class MockController(
 object MockControllerStore {
     val instance: MockController by lazy { MockController() }
 }
+

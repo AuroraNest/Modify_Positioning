@@ -21,6 +21,8 @@ import com.aurora.modifypositioning.model.DiagnosticSnapshot
 import com.aurora.modifypositioning.model.MockState
 import com.aurora.modifypositioning.model.MovementMode
 import com.aurora.modifypositioning.model.MovementState
+import com.aurora.modifypositioning.model.RouteSource
+import com.aurora.modifypositioning.model.TravelMode
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -77,6 +79,14 @@ fun DiagnosticScreen(
                 Text("移动状态：${movementStateLabel(snapshot.movementState)}")
                 Text("当前速度：${"%.2f".format(snapshot.movementCurrentSpeedMps)} m/s")
                 Text("距中心距离：${"%.1f".format(snapshot.movementDistanceFromCenterMeters)} 米")
+                if (snapshot.routeMode != null) {
+                    Text("路线模式：${movementModeLabel(snapshot.routeMode)}")
+                    Text("交通方式：${travelModeLabel(snapshot.travelMode)}")
+                    Text("路线来源：${routeSourceLabel(snapshot.routeSource)}")
+                    Text("剩余距离：${formatDistance(snapshot.remainingDistanceMeters)}")
+                    Text("剩余时间：${formatDuration(snapshot.remainingDurationSeconds)}")
+                    Text("路线进度：${formatPercent(snapshot.routeProgressPercent)}")
+                }
                 Text(
                     text = if (snapshot.movementLastPointTimeMillis == null) {
                         "最近移动点：暂无"
@@ -154,10 +164,13 @@ private fun stateLabel(state: MockState): String {
     }
 }
 
-private fun movementModeLabel(mode: MovementMode): String {
+private fun movementModeLabel(mode: MovementMode?): String {
     return when (mode) {
         MovementMode.FIXED -> "固定定位"
         MovementMode.RANDOM_WALK -> "随机步行"
+        MovementMode.POINT_TO_POINT_NAV -> "两点导航"
+        MovementMode.CUSTOM_ROUTE -> "指定路线"
+        null -> "-"
     }
 }
 
@@ -166,9 +179,49 @@ private fun movementStateLabel(state: MovementState): String {
         MovementState.Idle -> "空闲"
         MovementState.Walking -> "步行中"
         MovementState.ReachedBoundary -> "已到边界"
+        MovementState.ReachedDestination -> "已到终点"
         MovementState.Paused -> "已暂停"
         is MovementState.Error -> "异常: ${state.message}"
     }
+}
+
+private fun travelModeLabel(mode: TravelMode?): String {
+    return when (mode) {
+        TravelMode.WALK -> "步行"
+        TravelMode.BIKE -> "骑行"
+        TravelMode.CAR -> "汽车"
+        null -> "-"
+    }
+}
+
+private fun routeSourceLabel(source: RouteSource?): String {
+    return when (source) {
+        RouteSource.OSRM -> "OSRM"
+        RouteSource.MANUAL -> "手动"
+        null -> "-"
+    }
+}
+
+private fun formatDistance(value: Double?): String {
+    if (value == null) {
+        return "-"
+    }
+    return "${"%.1f".format(value)} 米"
+}
+
+private fun formatDuration(value: Double?): String {
+    if (value == null) {
+        return "-"
+    }
+    val minute = (value / 60.0).coerceAtLeast(0.0)
+    return "${"%.1f".format(minute)} 分钟"
+}
+
+private fun formatPercent(value: Double?): String {
+    if (value == null) {
+        return "-"
+    }
+    return "${"%.1f".format(value.coerceIn(0.0, 100.0))}%"
 }
 
 private fun formatTime(timeMillis: Long): String {

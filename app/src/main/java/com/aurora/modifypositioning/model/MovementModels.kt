@@ -3,6 +3,8 @@ package com.aurora.modifypositioning.model
 enum class MovementMode {
     FIXED,
     RANDOM_WALK,
+    POINT_TO_POINT_NAV,
+    CUSTOM_ROUTE,
 }
 
 data class RandomWalkConfig(
@@ -39,6 +41,7 @@ sealed class MovementState {
     data object Idle : MovementState()
     data object Walking : MovementState()
     data object ReachedBoundary : MovementState()
+    data object ReachedDestination : MovementState()
     data object Paused : MovementState()
     data class Error(val message: String) : MovementState()
 }

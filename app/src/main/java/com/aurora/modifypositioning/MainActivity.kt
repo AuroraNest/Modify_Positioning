@@ -24,9 +24,17 @@ import com.aurora.modifypositioning.data.MapPreferencesStore
 import com.aurora.modifypositioning.data.NominatimPlaceSearchRepository
 import com.aurora.modifypositioning.data.NominatimRemoteClient
 import com.aurora.modifypositioning.data.PhotonPlaceSearchRemoteClient
+import com.aurora.modifypositioning.data.RouteRepository
 import com.aurora.modifypositioning.data.local.LocationDatabase
 import com.aurora.modifypositioning.domain.MockControllerStore
+import com.aurora.modifypositioning.domain.routing.OsrmRoutePlanner
+import com.aurora.modifypositioning.model.MapSelection
 import com.aurora.modifypositioning.model.MovementMode
+import com.aurora.modifypositioning.model.MovementPageTab
+import com.aurora.modifypositioning.model.RouteInputMode
+import com.aurora.modifypositioning.model.SelectionSource
+import com.aurora.modifypositioning.model.TargetLocation
+import com.aurora.modifypositioning.model.TravelMode
 import com.aurora.modifypositioning.service.MockLocationService
 import com.aurora.modifypositioning.ui.DiagnosticScreen
 import com.aurora.modifypositioning.ui.MainControlScreen
@@ -62,11 +70,18 @@ class MainActivity : ComponentActivity() {
             val movementCurrentSpeedMps by controller.movementCurrentSpeedMps.collectAsState()
             val movementDistanceFromCenterMeters by controller.movementDistanceFromCenterMeters.collectAsState()
             val movementTrace by controller.movementTrace.collectAsState()
+            val plannedRoute by controller.plannedRoute.collectAsState()
+            val travelMode by controller.travelMode.collectAsState()
+            val routeProgress by controller.routeProgress.collectAsState()
 
             val mapPreferencesStore = remember { MapPreferencesStore(this@MainActivity) }
             val favoriteRepository = remember {
                 FavoriteLocationRepository(LocationDatabase.get(this@MainActivity).locationDao())
             }
+            val routeRepository = remember {
+                RouteRepository(LocationDatabase.get(this@MainActivity).locationDao())
+            }
+            val routePlanner = remember { OsrmRoutePlanner() }
 
             val placeSearchRepository = remember {
                 NominatimPlaceSearchRepository(
@@ -92,6 +107,9 @@ class MainActivity : ComponentActivity() {
                 factory = MovementViewModelFactory(
                     mapPreferencesStore = mapPreferencesStore,
                     controller = controller,
+                    routePlanner = routePlanner,
+                    routeRepository = routeRepository,
+                    placeSearchRepository = placeSearchRepository,
                 ),
             )
             val movementUiState by movementViewModel.uiState.collectAsState()
@@ -113,6 +131,9 @@ class MainActivity : ComponentActivity() {
                         movementCurrentSpeedMps = movementCurrentSpeedMps,
                         movementDistanceFromCenterMeters = movementDistanceFromCenterMeters,
                         movementTrace = movementTrace,
+                        plannedRoute = plannedRoute,
+                        travelMode = travelMode,
+                        routeProgress = routeProgress,
                         mapPreferencesStore = mapPreferencesStore,
                     ),
                 )
@@ -133,6 +154,9 @@ class MainActivity : ComponentActivity() {
                     movementCurrentSpeedMps = movementCurrentSpeedMps,
                     movementDistanceFromCenterMeters = movementDistanceFromCenterMeters,
                     movementTrace = movementTrace,
+                    plannedRoute = plannedRoute,
+                    travelMode = travelMode,
+                    routeProgress = routeProgress,
                     mapPreferencesStore = mapPreferencesStore,
                 )
             }
@@ -161,10 +185,11 @@ class MainActivity : ComponentActivity() {
                         this@MainActivity,
                         MockLocationService.startIntent(this@MainActivity),
                     )
-                    val tip = if (mode == MovementMode.RANDOM_WALK) {
-                        "已开始随机步行模拟"
-                    } else {
-                        "已开始修改定位"
+                    val tip = when (mode) {
+                        MovementMode.RANDOM_WALK -> "已开始随机步行模拟"
+                        MovementMode.POINT_TO_POINT_NAV -> "已开始两点导航模拟"
+                        MovementMode.CUSTOM_ROUTE -> "已开始指定路线模拟"
+                        MovementMode.FIXED -> "已开始修改定位"
                     }
                     Toast.makeText(this@MainActivity, tip, Toast.LENGTH_SHORT).show()
                 }
@@ -204,12 +229,14 @@ class MainActivity : ComponentActivity() {
                 lastInjection,
                 mapUiState.searchRequestCount,
                 mapUiState.calibrationMode,
-                movementMode,
-                movementState,
-                movementCurrentSpeedMps,
-                movementDistanceFromCenterMeters,
-                movementTrace.size,
-            ) {
+                                movementMode,
+                                movementState,
+                                movementCurrentSpeedMps,
+                                movementDistanceFromCenterMeters,
+                                movementTrace.size,
+                                plannedRoute?.id,
+                                routeProgress?.percent,
+                            ) {
                 refreshDiagnostics()
             }
 
@@ -283,8 +310,65 @@ class MainActivity : ComponentActivity() {
                         UiScreen.MOVEMENT -> {
                             MovementControlScreen(
                                 uiState = movementUiState,
-                                onStart = {
+                                onSelectTab = { movementViewModel.setSelectedTab(it) },
+                                onSetSearchTarget = { movementViewModel.setSearchTarget(it) },
+                                onSearchQueryChanged = { movementViewModel.onSearchQueryChanged(it) },
+                                onSearchSuggestionSelected = { suggestion ->
+                                    movementViewModel.onSearchSuggestionSelected(
+                                        MapSelection(
+                                            lat = suggestion.lat,
+                                            lng = suggestion.lng,
+                                            source = SelectionSource.SEARCH,
+                                        ),
+                                    )
+                                },
+                                onSetTravelMode = { movementViewModel.setTravelMode(it) },
+                                onSetPointToPointStartFromCenter = { lat, lng ->
+                                    movementViewModel.setPointToPointStart(
+                                        TargetLocation("地图起点", lat, lng),
+                                    )
+                                },
+                                onSetPointToPointEndFromCenter = { lat, lng ->
+                                    movementViewModel.setPointToPointEnd(
+                                        TargetLocation("地图终点", lat, lng),
+                                    )
+                                },
+                                onPlanPointToPointNow = { movementViewModel.planPointToPointNow() },
+                                onSetRouteInputMode = { movementViewModel.setRouteInputMode(it) },
+                                onSetSnapToRoad = { movementViewModel.setSnapToRoad(it) },
+                                onAddCustomPointFromCenter = { lat, lng ->
+                                    movementViewModel.addCustomRoutePoint(
+                                        MapSelection(
+                                            lat = lat,
+                                            lng = lng,
+                                            source = SelectionSource.MAP_DRAG,
+                                        ),
+                                    )
+                                },
+                                onUndoCustomPoint = { movementViewModel.undoCustomRoutePoint() },
+                                onClearCustomPoints = { movementViewModel.clearCustomRoutePoints() },
+                                onConfirmCustomRoute = { movementViewModel.confirmCustomRoute() },
+                                onApplySavedRoute = { movementViewModel.applySavedRoute(it) },
+                                onDeleteSavedRoute = { movementViewModel.deleteSavedRoute(it) },
+                                onStartRandomWalk = {
+                                    movementViewModel.prepareRandomWalkStart()
                                     startMock(MovementMode.RANDOM_WALK)
+                                },
+                                onStartPointToPoint = {
+                                    val error = movementViewModel.preparePointToPointStart()
+                                    if (error != null) {
+                                        Toast.makeText(this@MainActivity, error, Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        startMock(MovementMode.POINT_TO_POINT_NAV)
+                                    }
+                                },
+                                onStartCustomRoute = {
+                                    val error = movementViewModel.prepareCustomRouteStart()
+                                    if (error != null) {
+                                        Toast.makeText(this@MainActivity, error, Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        startMock(MovementMode.CUSTOM_ROUTE)
+                                    }
                                 },
                                 onPause = { pauseMock() },
                                 onStop = { stopMock() },

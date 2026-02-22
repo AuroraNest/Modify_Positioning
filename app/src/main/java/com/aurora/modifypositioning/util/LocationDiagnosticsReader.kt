@@ -13,6 +13,9 @@ import com.aurora.modifypositioning.model.MockState
 import com.aurora.modifypositioning.model.MovementMode
 import com.aurora.modifypositioning.model.MovementPoint
 import com.aurora.modifypositioning.model.MovementState
+import com.aurora.modifypositioning.model.PlannedRoute
+import com.aurora.modifypositioning.model.RouteProgress
+import com.aurora.modifypositioning.model.TravelMode
 import kotlinx.coroutines.runBlocking
 
 object LocationDiagnosticsReader {
@@ -26,6 +29,9 @@ object LocationDiagnosticsReader {
         movementCurrentSpeedMps: Double,
         movementDistanceFromCenterMeters: Double,
         movementTrace: List<MovementPoint>,
+        plannedRoute: PlannedRoute?,
+        travelMode: TravelMode?,
+        routeProgress: RouteProgress?,
         mapPreferencesStore: MapPreferencesStore,
     ): DiagnosticSnapshot {
         val missingPermissions = MockEnvironmentChecker.missingPermissions(context)
@@ -64,6 +70,15 @@ object LocationDiagnosticsReader {
             movementCurrentSpeedMps = movementCurrentSpeedMps,
             movementDistanceFromCenterMeters = movementDistanceFromCenterMeters,
             movementLastPointTimeMillis = movementTrace.lastOrNull()?.timestampMs,
+            routeMode = if (
+                movementMode == MovementMode.POINT_TO_POINT_NAV ||
+                movementMode == MovementMode.CUSTOM_ROUTE
+            ) movementMode else null,
+            travelMode = travelMode,
+            routeSource = plannedRoute?.source,
+            remainingDistanceMeters = routeProgress?.remainingMeters,
+            remainingDurationSeconds = routeProgress?.remainingSeconds,
+            routeProgressPercent = routeProgress?.percent,
             calibrationMode = calibrationMode,
             searchRequestCount = AppSessionMetrics.searchRequests,
         )

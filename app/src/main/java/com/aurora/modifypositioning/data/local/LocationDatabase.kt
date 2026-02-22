@@ -6,8 +6,14 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [FavoriteLocationEntity::class, RecentSelectionEntity::class],
-    version = 1,
+    entities = [
+        FavoriteLocationEntity::class,
+        RecentSelectionEntity::class,
+        SavedRouteEntity::class,
+        SavedRoutePointEntity::class,
+        RecentRouteSelectionEntity::class,
+    ],
+    version = 2,
     exportSchema = true,
 )
 abstract class LocationDatabase : RoomDatabase() {

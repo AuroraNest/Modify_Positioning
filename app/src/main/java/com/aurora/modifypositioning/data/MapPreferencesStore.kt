@@ -2,6 +2,7 @@ package com.aurora.modifypositioning.data
 
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
@@ -10,9 +11,11 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.aurora.modifypositioning.model.CoordinateCalibrationMode
 import com.aurora.modifypositioning.model.MapCameraSnapshot
+import com.aurora.modifypositioning.model.MovementPageTab
 import com.aurora.modifypositioning.model.MovementMode
 import com.aurora.modifypositioning.model.RandomWalkConfig
 import com.aurora.modifypositioning.model.TargetLocation
+import com.aurora.modifypositioning.model.TravelMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -33,6 +36,18 @@ class MapPreferencesStore(
         .map { prefs ->
             val raw = prefs[Keys.MOVEMENT_MODE] ?: MovementMode.FIXED.name
             runCatching { MovementMode.valueOf(raw) }.getOrDefault(MovementMode.FIXED)
+        }
+
+    val movementTabFlow: Flow<MovementPageTab> = context.mapPrefsDataStore.data
+        .map { prefs ->
+            val raw = prefs[Keys.MOVEMENT_TAB] ?: MovementPageTab.RANDOM_WALK.name
+            runCatching { MovementPageTab.valueOf(raw) }.getOrDefault(MovementPageTab.RANDOM_WALK)
+        }
+
+    val defaultTravelModeFlow: Flow<TravelMode> = context.mapPrefsDataStore.data
+        .map { prefs ->
+            val raw = prefs[Keys.DEFAULT_TRAVEL_MODE] ?: TravelMode.WALK.name
+            runCatching { TravelMode.valueOf(raw) }.getOrDefault(TravelMode.WALK)
         }
 
     suspend fun setCalibrationMode(mode: CoordinateCalibrationMode) {
@@ -87,6 +102,37 @@ class MapPreferencesStore(
         return movementModeFlow.first()
     }
 
+    suspend fun setMovementTab(tab: MovementPageTab) {
+        context.mapPrefsDataStore.edit { prefs ->
+            prefs[Keys.MOVEMENT_TAB] = tab.name
+        }
+    }
+
+    suspend fun getMovementTab(): MovementPageTab {
+        return movementTabFlow.first()
+    }
+
+    suspend fun setDefaultTravelMode(mode: TravelMode) {
+        context.mapPrefsDataStore.edit { prefs ->
+            prefs[Keys.DEFAULT_TRAVEL_MODE] = mode.name
+        }
+    }
+
+    suspend fun getDefaultTravelMode(): TravelMode {
+        return defaultTravelModeFlow.first()
+    }
+
+    suspend fun setDefaultSnapToRoad(enabled: Boolean) {
+        context.mapPrefsDataStore.edit { prefs ->
+            prefs[Keys.DEFAULT_SNAP_TO_ROAD] = enabled
+        }
+    }
+
+    suspend fun getDefaultSnapToRoad(): Boolean {
+        val prefs = context.mapPrefsDataStore.data.first()
+        return prefs[Keys.DEFAULT_SNAP_TO_ROAD] ?: true
+    }
+
     suspend fun saveRandomWalkConfig(config: RandomWalkConfig) {
         val normalized = config.normalized()
         context.mapPrefsDataStore.edit { prefs ->
@@ -116,6 +162,9 @@ class MapPreferencesStore(
         val CAMERA_LNG: Preferences.Key<Double> = doublePreferencesKey("camera_lng")
         val CAMERA_ZOOM: Preferences.Key<Float> = floatPreferencesKey("camera_zoom")
         val MOVEMENT_MODE: Preferences.Key<String> = stringPreferencesKey("movement_mode")
+        val MOVEMENT_TAB: Preferences.Key<String> = stringPreferencesKey("movement_tab")
+        val DEFAULT_TRAVEL_MODE: Preferences.Key<String> = stringPreferencesKey("default_travel_mode")
+        val DEFAULT_SNAP_TO_ROAD: Preferences.Key<Boolean> = booleanPreferencesKey("default_snap_to_road")
         val RANDOM_WALK_RADIUS_METERS: Preferences.Key<Double> =
             doublePreferencesKey("random_walk_radius_meters")
         val RANDOM_WALK_MIN_SPEED_MPS: Preferences.Key<Double> =
