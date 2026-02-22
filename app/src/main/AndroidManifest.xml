@@ -13,6 +13,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
+        android:name=".ModifyPositioningApp"
         android:allowBackup="true"
         android:forceDarkAllowed="false"
         android:icon="@mipmap/ic_launcher"
@@ -20,6 +21,9 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.ModifyPositioning">
+        <meta-data
+            android:name="com.amap.api.v2.apikey"
+            android:value="${AMAP_API_KEY}" />
 
         <service
             android:name=".service.MockLocationService"

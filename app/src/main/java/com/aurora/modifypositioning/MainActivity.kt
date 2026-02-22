@@ -21,6 +21,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aurora.modifypositioning.data.FavoriteLocationRepository
 import com.aurora.modifypositioning.data.FallbackPlaceSearchRemote
 import com.aurora.modifypositioning.data.MapPreferencesStore
+import com.aurora.modifypositioning.data.AMapWebPlaceSearchRepository
 import com.aurora.modifypositioning.data.NominatimPlaceSearchRepository
 import com.aurora.modifypositioning.data.NominatimRemoteClient
 import com.aurora.modifypositioning.data.PhotonPlaceSearchRemoteClient
@@ -83,7 +84,7 @@ class MainActivity : ComponentActivity() {
             }
             val routePlanner = remember { OsrmRoutePlanner() }
 
-            val placeSearchRepository = remember {
+            val osmPlaceSearchRepository = remember {
                 NominatimPlaceSearchRepository(
                     remote = FallbackPlaceSearchRemote(
                         remotes = listOf(
@@ -93,12 +94,16 @@ class MainActivity : ComponentActivity() {
                     ),
                 )
             }
+            val amapPlaceSearchRepository = remember {
+                AMapWebPlaceSearchRepository(apiKey = BuildConfig.AMAP_WEB_API_KEY)
+            }
 
             val mapViewModel: MapControlViewModel = viewModel(
                 factory = MapControlViewModelFactory(
                     mapPreferencesStore = mapPreferencesStore,
                     favoriteRepository = favoriteRepository,
-                    placeSearchRepository = placeSearchRepository,
+                    osmPlaceSearchRepository = osmPlaceSearchRepository,
+                    amapPlaceSearchRepository = amapPlaceSearchRepository,
                     controller = controller,
                 ),
             )
@@ -109,7 +114,7 @@ class MainActivity : ComponentActivity() {
                     controller = controller,
                     routePlanner = routePlanner,
                     routeRepository = routeRepository,
-                    placeSearchRepository = placeSearchRepository,
+                    placeSearchRepository = osmPlaceSearchRepository,
                 ),
             )
             val movementUiState by movementViewModel.uiState.collectAsState()
@@ -270,6 +275,9 @@ class MainActivity : ComponentActivity() {
                                 onSearchQueryChanged = { mapViewModel.onSearchQueryChanged(it) },
                                 onSuggestionSelected = { mapViewModel.onSuggestionSelected(it) },
                                 onMapDraggedSelection = { lat, lng -> mapViewModel.onMapDraggedSelection(lat, lng) },
+                                onMapProviderChanged = { mapViewModel.setMapProvider(it) },
+                                onUseSearchTarget = { mapViewModel.applyLastSearchTarget() },
+                                onUseMapCenterTarget = { mapViewModel.applyMapCenterAsTarget() },
                                 onCalibrationModeChanged = { mapViewModel.setCalibrationMode(it) },
                                 onAddFavorite = { mapViewModel.addFavoriteFromCurrent() },
                                 onFavoriteNameInputChanged = { mapViewModel.onFavoriteNameInputChanged(it) },

@@ -4,6 +4,7 @@ import com.aurora.modifypositioning.model.CoordinateCalibrationMode
 import com.aurora.modifypositioning.model.DEFAULT_TARGET
 import com.aurora.modifypositioning.model.FavoriteLocation
 import com.aurora.modifypositioning.model.MapCameraSnapshot
+import com.aurora.modifypositioning.model.MapProvider
 import com.aurora.modifypositioning.model.PlaceSuggestion
 import com.aurora.modifypositioning.model.SelectionSource
 import com.aurora.modifypositioning.model.TargetLocation
@@ -24,6 +25,9 @@ data class MapControlUiState(
         lng = DEFAULT_TARGET.longitude,
         zoom = 16f,
     ),
+    val mapProvider: MapProvider = MapProvider.AMAP,
+    val mapCenterCandidate: TargetLocation = DEFAULT_TARGET,
+    val lastSearchTarget: TargetLocation? = null,
     val searchRequestCount: Int = 0,
     val lastSelectionSource: SelectionSource = SelectionSource.SEARCH,
 )

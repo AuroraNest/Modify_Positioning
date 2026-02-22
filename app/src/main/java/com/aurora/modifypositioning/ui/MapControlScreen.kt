@@ -1,6 +1,8 @@
 package com.aurora.modifypositioning.ui
 
+import android.os.Bundle
 import android.preference.PreferenceManager
+import android.view.MotionEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -43,8 +45,14 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.amap.api.maps.AMap
+import com.amap.api.maps.CameraUpdateFactory
+import com.amap.api.maps.MapView as AMapView
+import com.amap.api.maps.model.LatLng
+import com.aurora.modifypositioning.BuildConfig
 import com.aurora.modifypositioning.model.CoordinateCalibrationMode
 import com.aurora.modifypositioning.model.FavoriteLocation
+import com.aurora.modifypositioning.model.MapProvider
 import com.aurora.modifypositioning.model.PlaceSuggestion
 import com.aurora.modifypositioning.model.SelectionSource
 import com.aurora.modifypositioning.ui.components.FavoriteSheet
@@ -60,7 +68,7 @@ import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
-import org.osmdroid.views.MapView
+import org.osmdroid.views.MapView as OsmMapView
 
 @Composable
 fun MapControlScreen(
@@ -68,6 +76,9 @@ fun MapControlScreen(
     onSearchQueryChanged: (String) -> Unit,
     onSuggestionSelected: (PlaceSuggestion) -> Unit,
     onMapDraggedSelection: (Double, Double) -> Unit,
+    onMapProviderChanged: (MapProvider) -> Unit,
+    onUseSearchTarget: () -> Unit,
+    onUseMapCenterTarget: () -> Unit,
     onCalibrationModeChanged: (CoordinateCalibrationMode) -> Unit,
     onAddFavorite: () -> Unit,
     onFavoriteNameInputChanged: (String) -> Unit,
@@ -84,17 +95,17 @@ fun MapControlScreen(
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
-    var mapViewRef by remember { mutableStateOf<MapView?>(null) }
+    var aMapViewRef by remember { mutableStateOf<AMapView?>(null) }
+    var aMapRef by remember { mutableStateOf<AMap?>(null) }
+    var osmMapViewRef by remember { mutableStateOf<OsmMapView?>(null) }
     var idleJob by remember { mutableStateOf<Job?>(null) }
+    var skipNextCameraEvent by remember { mutableStateOf(false) }
+    var mapInteracting by remember { mutableStateOf(false) }
 
-    fun publishCenter(mapView: MapView) {
+    fun publishCenter(lat: Double, lng: Double, zoom: Float) {
         idleJob?.cancel()
         idleJob = scope.launch {
             delay(250)
-            val center = mapView.mapCenter
-            val lat = center.latitude
-            val lng = center.longitude
-            val zoom = mapView.zoomLevelDouble.toFloat()
             onCameraIdle(lat, lng, zoom)
             onMapDraggedSelection(lat, lng)
         }
@@ -103,9 +114,20 @@ fun MapControlScreen(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> mapViewRef?.onResume()
-                Lifecycle.Event.ON_PAUSE -> mapViewRef?.onPause()
-                Lifecycle.Event.ON_DESTROY -> mapViewRef?.onDetach()
+                Lifecycle.Event.ON_RESUME -> {
+                    aMapViewRef?.onResume()
+                    osmMapViewRef?.onResume()
+                }
+
+                Lifecycle.Event.ON_PAUSE -> {
+                    aMapViewRef?.onPause()
+                    osmMapViewRef?.onPause()
+                }
+
+                Lifecycle.Event.ON_DESTROY -> {
+                    osmMapViewRef?.onDetach()
+                }
+
                 else -> Unit
             }
         }
@@ -114,8 +136,9 @@ fun MapControlScreen(
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             idleJob?.cancel()
-            mapViewRef?.onDetach()
-            mapViewRef = null
+            aMapViewRef = null
+            aMapRef = null
+            osmMapViewRef = null
         }
     }
 
@@ -124,23 +147,40 @@ fun MapControlScreen(
         uiState.selectedTarget.longitude,
         uiState.camera.zoom,
         uiState.lastSelectionSource,
+        uiState.mapProvider,
     ) {
-        val mapView = mapViewRef ?: return@LaunchedEffect
         if (uiState.lastSelectionSource == SelectionSource.MAP_DRAG) {
             return@LaunchedEffect
         }
 
-        val desired = GeoPoint(uiState.selectedTarget.latitude, uiState.selectedTarget.longitude)
-        val current = mapView.mapCenter
-        if (
-            abs(current.latitude - desired.latitude) > 0.000001 ||
-            abs(current.longitude - desired.longitude) > 0.000001
-        ) {
-            mapView.controller.animateTo(desired)
+        if (uiState.mapProvider == MapProvider.AMAP) {
+            val aMap = aMapRef ?: return@LaunchedEffect
+            val desired = LatLng(uiState.selectedTarget.latitude, uiState.selectedTarget.longitude)
+            val camera = aMap.cameraPosition ?: return@LaunchedEffect
+            val current = camera.target
+            val shouldMove =
+                abs(current.latitude - desired.latitude) > 0.000001 ||
+                    abs(current.longitude - desired.longitude) > 0.000001 ||
+                    abs(camera.zoom - uiState.camera.zoom) > 0.05f
+
+            if (shouldMove) {
+                skipNextCameraEvent = true
+                aMap.animateCamera(CameraUpdateFactory.newLatLngZoom(desired, uiState.camera.zoom))
+            }
+            return@LaunchedEffect
         }
 
-        if (abs(mapView.zoomLevelDouble - uiState.camera.zoom.toDouble()) > 0.05) {
-            mapView.controller.setZoom(uiState.camera.zoom.toDouble())
+        val osmMapView = osmMapViewRef ?: return@LaunchedEffect
+        val desired = GeoPoint(uiState.selectedTarget.latitude, uiState.selectedTarget.longitude)
+        val current = osmMapView.mapCenter
+        val shouldMove =
+            abs(current.latitude - desired.latitude) > 0.000001 ||
+                abs(current.longitude - desired.longitude) > 0.000001
+        if (shouldMove) {
+            osmMapView.controller.animateTo(desired)
+        }
+        if (abs(osmMapView.zoomLevelDouble - uiState.camera.zoom.toDouble()) > 0.05) {
+            osmMapView.controller.setZoom(uiState.camera.zoom.toDouble())
         }
     }
 
@@ -210,7 +250,10 @@ fun MapControlScreen(
                     .fillMaxSize()
                     .padding(innerPadding)
                     .padding(horizontal = 12.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .verticalScroll(
+                        state = rememberScrollState(),
+                        enabled = !mapInteracting,
+                    ),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Card(
@@ -229,10 +272,57 @@ fun MapControlScreen(
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            text = "拖动地图后停 0.5 秒，再点开始即可生效",
+                            text = "拖动地图后停 0.5 秒，再选择“用地图中心点”",
                             color = Color(0xFFBED7F0),
                             style = MaterialTheme.typography.bodyMedium,
                         )
+                        Text(
+                            text = "当前地图源：${if (uiState.mapProvider == MapProvider.AMAP) "高德(国内优先)" else "OSM(海外优先)"}",
+                            color = Color(0xFFBED7F0),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        if (uiState.mapProvider == MapProvider.AMAP && BuildConfig.AMAP_API_KEY.isBlank()) {
+                            Text(
+                                text = "未配置高德 Key，建议切换 OSM",
+                                color = Color(0xFFFFB4AB),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        if (uiState.mapProvider == MapProvider.AMAP && BuildConfig.AMAP_WEB_API_KEY.isBlank()) {
+                            Text(
+                                text = "高德搜索未配置 Web服务 Key，搜索建议切到 OSM",
+                                color = Color(0xFFFFD8A8),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        if (
+                            uiState.mapProvider == MapProvider.AMAP &&
+                                !isLikelyInChina(uiState.camera.lat, uiState.camera.lng)
+                        ) {
+                            Text(
+                                text = "当前区域在海外，建议切换到 OSM",
+                                color = Color(0xFFFFD8A8),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilledTonalButton(
+                        onClick = { onMapProviderChanged(MapProvider.AMAP) },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(if (uiState.mapProvider == MapProvider.AMAP) "已选：高德" else "高德")
+                    }
+                    FilledTonalButton(
+                        onClick = { onMapProviderChanged(MapProvider.OSM) },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(if (uiState.mapProvider == MapProvider.OSM) "已选：OSM" else "OSM")
                     }
                 }
 
@@ -243,12 +333,38 @@ fun MapControlScreen(
                     shape = RoundedCornerShape(18.dp),
                 ) {
                     Box(modifier = Modifier.fillMaxSize()) {
-                        AndroidMap(
-                            uiState = uiState,
-                            publishCenter = { mapView -> publishCenter(mapView) },
-                            onMapCreated = { mapViewRef = it },
-                            onMapUpdated = { mapViewRef = it },
-                        )
+                        if (uiState.mapProvider == MapProvider.AMAP) {
+                            AMapPanel(
+                                uiState = uiState,
+                                onMapReady = { mapView, aMap ->
+                                    aMapViewRef = mapView
+                                    aMapRef = aMap
+                                },
+                                onMapTouchStateChanged = { interacting ->
+                                    mapInteracting = interacting
+                                },
+                                onCameraChanged = { lat, lng, zoom ->
+                                    if (skipNextCameraEvent) {
+                                        skipNextCameraEvent = false
+                                    } else {
+                                        publishCenter(lat, lng, zoom)
+                                    }
+                                },
+                            )
+                        } else {
+                            OSMPanel(
+                                uiState = uiState,
+                                onMapReady = { mapView ->
+                                    osmMapViewRef = mapView
+                                },
+                                onMapTouchStateChanged = { interacting ->
+                                    mapInteracting = interacting
+                                },
+                                onCameraChanged = { lat, lng, zoom ->
+                                    publishCenter(lat, lng, zoom)
+                                },
+                            )
+                        }
 
                         Box(
                             modifier = Modifier
@@ -259,7 +375,7 @@ fun MapControlScreen(
                                 .padding(horizontal = 10.dp, vertical = 6.dp),
                         ) {
                             Text(
-                                text = "十字中心点就是目标",
+                                text = "十字中心点就是候选目标",
                                 color = Color.White,
                                 style = MaterialTheme.typography.bodySmall,
                             )
@@ -293,9 +409,32 @@ fun MapControlScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Text(
-                            text = "当前选点：${uiState.selectedTarget.name}",
+                            text = "当前生效目标：${uiState.selectedTarget.name}",
                             style = MaterialTheme.typography.titleMedium,
                         )
+                        Text(
+                            text = "地图中心候选：${formatCoord(uiState.mapCenterCandidate.latitude)}, ${formatCoord(uiState.mapCenterCandidate.longitude)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            FilledTonalButton(
+                                onClick = onUseSearchTarget,
+                                enabled = uiState.lastSearchTarget != null,
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text("用搜索点")
+                            }
+                            OutlinedButton(
+                                onClick = onUseMapCenterTarget,
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text("用地图中心点")
+                            }
+                        }
                         Text(
                             text = "会话搜索请求数：${uiState.searchRequestCount}",
                             style = MaterialTheme.typography.bodyMedium,
@@ -323,11 +462,81 @@ fun MapControlScreen(
 }
 
 @Composable
-private fun AndroidMap(
+private fun AMapPanel(
     uiState: MapControlUiState,
-    publishCenter: (MapView) -> Unit,
-    onMapCreated: (MapView) -> Unit,
-    onMapUpdated: (MapView) -> Unit,
+    onMapReady: (AMapView, AMap) -> Unit,
+    onMapTouchStateChanged: (Boolean) -> Unit,
+    onCameraChanged: (Double, Double, Float) -> Unit,
+) {
+    AndroidView(
+        modifier = Modifier
+            .fillMaxSize()
+            .border(
+                width = 1.dp,
+                color = Color(0xFFCFDCE9),
+                shape = RoundedCornerShape(18.dp),
+            )
+            .clip(RoundedCornerShape(18.dp)),
+        factory = { context ->
+            AMapView(context).apply {
+                onCreate(Bundle())
+                val aMap = map
+                aMap.uiSettings.isZoomControlsEnabled = false
+                aMap.uiSettings.isRotateGesturesEnabled = false
+                aMap.uiSettings.isTiltGesturesEnabled = false
+                aMap.moveCamera(
+                    CameraUpdateFactory.newLatLngZoom(
+                        LatLng(uiState.camera.lat, uiState.camera.lng),
+                        uiState.camera.zoom,
+                    ),
+                )
+                aMap.setOnCameraChangeListener(
+                    object : AMap.OnCameraChangeListener {
+                        override fun onCameraChange(cameraPosition: com.amap.api.maps.model.CameraPosition?) {
+                            Unit
+                        }
+
+                        override fun onCameraChangeFinish(cameraPosition: com.amap.api.maps.model.CameraPosition?) {
+                            val position = cameraPosition ?: return
+                            onCameraChanged(
+                                position.target.latitude,
+                                position.target.longitude,
+                                position.zoom,
+                            )
+                        }
+                    },
+                )
+                aMap.setOnMapTouchListener { event ->
+                    when (event?.actionMasked) {
+                        MotionEvent.ACTION_DOWN,
+                        MotionEvent.ACTION_MOVE,
+                        -> onMapTouchStateChanged(true)
+
+                        MotionEvent.ACTION_UP,
+                        MotionEvent.ACTION_CANCEL,
+                        -> onMapTouchStateChanged(false)
+                    }
+                }
+                onMapReady(this, aMap)
+            }
+        },
+        update = { mapView ->
+            onMapReady(mapView, mapView.map)
+        },
+        onRelease = { mapView ->
+            // 某些机型销毁时会触发高德 native 崩溃，先仅暂停以保证切页稳定。
+            onMapTouchStateChanged(false)
+            mapView.onPause()
+        },
+    )
+}
+
+@Composable
+private fun OSMPanel(
+    uiState: MapControlUiState,
+    onMapReady: (OsmMapView) -> Unit,
+    onMapTouchStateChanged: (Boolean) -> Unit,
+    onCameraChanged: (Double, Double, Float) -> Unit,
 ) {
     AndroidView(
         modifier = Modifier
@@ -344,8 +553,7 @@ private fun AndroidMap(
                 PreferenceManager.getDefaultSharedPreferences(context),
             )
             Configuration.getInstance().userAgentValue = context.packageName
-
-            MapView(context).apply {
+            OsmMapView(context).apply {
                 setTileSource(TileSourceFactory.MAPNIK)
                 setMultiTouchControls(true)
                 isTilesScaledToDpi = true
@@ -356,25 +564,52 @@ private fun AndroidMap(
                     object : MapListener {
                         override fun onScroll(event: ScrollEvent): Boolean {
                             if (!this@apply.isAnimating) {
-                                publishCenter(this@apply)
+                                val center = mapCenter
+                                onCameraChanged(
+                                    center.latitude,
+                                    center.longitude,
+                                    zoomLevelDouble.toFloat(),
+                                )
                             }
                             return true
                         }
 
                         override fun onZoom(event: ZoomEvent): Boolean {
                             if (!this@apply.isAnimating) {
-                                publishCenter(this@apply)
+                                val center = mapCenter
+                                onCameraChanged(
+                                    center.latitude,
+                                    center.longitude,
+                                    zoomLevelDouble.toFloat(),
+                                )
                             }
                             return true
                         }
                     },
                 )
-            }.also { createdMapView ->
-                onMapCreated(createdMapView)
+                setOnTouchListener { _, event ->
+                    when (event?.actionMasked) {
+                        MotionEvent.ACTION_DOWN,
+                        MotionEvent.ACTION_MOVE,
+                        -> onMapTouchStateChanged(true)
+
+                        MotionEvent.ACTION_UP,
+                        MotionEvent.ACTION_CANCEL,
+                        -> onMapTouchStateChanged(false)
+                    }
+                    false
+                }
+            }.also { mapView ->
+                onMapReady(mapView)
             }
         },
-        update = { updatedMapView ->
-            onMapUpdated(updatedMapView)
+        update = { mapView ->
+            onMapReady(mapView)
+        },
+        onRelease = { mapView ->
+            onMapTouchStateChanged(false)
+            mapView.onPause()
+            mapView.onDetach()
         },
     )
 }
@@ -407,4 +642,12 @@ private fun CalibrationSelector(
             }
         }
     }
+}
+
+private fun formatCoord(value: Double): String {
+    return "%.6f".format(value)
+}
+
+private fun isLikelyInChina(lat: Double, lng: Double): Boolean {
+    return lat in 3.0..54.0 && lng in 73.0..136.0
 }

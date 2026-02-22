@@ -10,6 +10,7 @@ import com.aurora.modifypositioning.domain.MockController
 import com.aurora.modifypositioning.model.CoordinateCalibrationMode
 import com.aurora.modifypositioning.model.FavoriteLocation
 import com.aurora.modifypositioning.model.MapCameraSnapshot
+import com.aurora.modifypositioning.model.MapProvider
 import com.aurora.modifypositioning.model.PlaceSuggestion
 import com.aurora.modifypositioning.model.SelectionSource
 import com.aurora.modifypositioning.model.TargetLocation
@@ -26,7 +27,8 @@ import kotlinx.coroutines.launch
 class MapControlViewModel(
     private val mapPreferencesStore: MapPreferencesStore,
     private val favoriteRepository: FavoriteLocationRepository,
-    private val placeSearchRepository: PlaceSearchRepository?,
+    private val osmPlaceSearchRepository: PlaceSearchRepository?,
+    private val amapPlaceSearchRepository: PlaceSearchRepository?,
     private val controller: MockController,
 ) : ViewModel() {
 
@@ -61,12 +63,17 @@ class MapControlViewModel(
             return
         }
 
-        if (placeSearchRepository == null) {
+        val searchRepository = when (_uiState.value.mapProvider) {
+            MapProvider.AMAP -> amapPlaceSearchRepository
+            MapProvider.OSM -> osmPlaceSearchRepository
+        }
+
+        if (searchRepository == null) {
             _uiState.update {
                 it.copy(
                     suggestions = emptyList(),
                     isSearching = false,
-                    searchError = "搜索服务未就绪",
+                    searchError = "当前地图源搜索未就绪",
                 )
             }
             return
@@ -76,7 +83,7 @@ class MapControlViewModel(
             delay(600)
             _uiState.update { it.copy(isSearching = true) }
 
-            runCatching { placeSearchRepository.autocomplete(query) }
+            runCatching { searchRepository.autocomplete(query) }
                 .onSuccess { suggestions ->
                     _uiState.update {
                         it.copy(
@@ -104,20 +111,69 @@ class MapControlViewModel(
             longitude = suggestion.lng,
         )
         applyTarget(target, SelectionSource.SEARCH)
-        _uiState.update { it.copy(suggestions = emptyList(), searchQuery = suggestion.title) }
+        _uiState.update {
+            it.copy(
+                suggestions = emptyList(),
+                searchQuery = suggestion.title,
+                lastSearchTarget = target,
+            )
+        }
     }
 
     fun onMapDraggedSelection(lat: Double, lng: Double) {
-        val current = _uiState.value.selectedTarget
-        if (kotlin.math.abs(current.latitude - lat) < 0.000001 && kotlin.math.abs(current.longitude - lng) < 0.000001) {
+        val current = _uiState.value.mapCenterCandidate
+        if (
+            kotlin.math.abs(current.latitude - lat) < 0.000001 &&
+            kotlin.math.abs(current.longitude - lng) < 0.000001
+        ) {
             return
         }
-        val target = current.copy(
-            name = if (current.name == "地图选点" || current.name == "地图拖动") "地图拖动" else current.name,
-            latitude = lat,
-            longitude = lng,
+        _uiState.update {
+            it.copy(
+                mapCenterCandidate = TargetLocation(
+                    name = "地图中心点",
+                    latitude = lat,
+                    longitude = lng,
+                ),
+            )
+        }
+    }
+
+    fun applyMapCenterAsTarget() {
+        val candidate = _uiState.value.mapCenterCandidate
+        val target = candidate.copy(
+            name = "地图拖动",
         )
         applyTarget(target, SelectionSource.MAP_DRAG)
+    }
+
+    fun applyLastSearchTarget() {
+        val searchTarget = _uiState.value.lastSearchTarget ?: run {
+            _uiState.update { it.copy(searchError = "暂无搜索结果点可应用") }
+            return
+        }
+        applyTarget(searchTarget, SelectionSource.SEARCH)
+    }
+
+    fun setMapProvider(provider: MapProvider) {
+        _uiState.update {
+            it.copy(
+                mapProvider = provider,
+                suggestions = emptyList(),
+                isSearching = false,
+                searchError = null,
+            )
+        }
+    }
+
+    fun autoSwitchProviderForCurrentCamera() {
+        val camera = _uiState.value.camera
+        val provider = if (isLikelyInChina(camera.lat, camera.lng)) MapProvider.AMAP else MapProvider.OSM
+        _uiState.update { it.copy(mapProvider = provider) }
+    }
+
+    private fun isLikelyInChina(lat: Double, lng: Double): Boolean {
+        return lat in 3.0..54.0 && lng in 73.0..136.0
     }
 
     fun onManualLatChanged(value: String) {
@@ -224,7 +280,19 @@ class MapControlViewModel(
             _uiState.update {
                 it.copy(
                     selectedTarget = target ?: it.selectedTarget,
+                    mapCenterCandidate = target ?: it.mapCenterCandidate,
+                    lastSearchTarget = target ?: it.lastSearchTarget,
                     camera = camera ?: it.camera,
+                    mapProvider = if (
+                        isLikelyInChina(
+                            (target ?: it.selectedTarget).latitude,
+                            (target ?: it.selectedTarget).longitude,
+                        )
+                    ) {
+                        MapProvider.AMAP
+                    } else {
+                        MapProvider.OSM
+                    },
                     searchRequestCount = AppSessionMetrics.searchRequests,
                 )
             }
@@ -252,8 +320,10 @@ class MapControlViewModel(
             it.copy(
                 selectedTarget = target,
                 camera = it.camera.copy(lat = target.latitude, lng = target.longitude),
+                mapCenterCandidate = target,
                 searchError = null,
                 lastSelectionSource = source,
+                lastSearchTarget = if (source == SelectionSource.SEARCH) target else it.lastSearchTarget,
             )
         }
         controller.updateTarget(target)
@@ -272,7 +342,8 @@ class MapControlViewModel(
 class MapControlViewModelFactory(
     private val mapPreferencesStore: MapPreferencesStore,
     private val favoriteRepository: FavoriteLocationRepository,
-    private val placeSearchRepository: PlaceSearchRepository?,
+    private val osmPlaceSearchRepository: PlaceSearchRepository?,
+    private val amapPlaceSearchRepository: PlaceSearchRepository?,
     private val controller: MockController,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
@@ -281,7 +352,8 @@ class MapControlViewModelFactory(
             return MapControlViewModel(
                 mapPreferencesStore = mapPreferencesStore,
                 favoriteRepository = favoriteRepository,
-                placeSearchRepository = placeSearchRepository,
+                osmPlaceSearchRepository = osmPlaceSearchRepository,
+                amapPlaceSearchRepository = amapPlaceSearchRepository,
                 controller = controller,
             ) as T
         }

@@ -1,7 +1,31 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp")
+}
+
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) {
+        file.inputStream().use { load(it) }
+    }
+}
+
+val amapApiKey =
+    (providers.gradleProperty("AMAP_API_KEY").orNull
+        ?: localProperties.getProperty("AMAP_API_KEY")
+        ?: "")
+        .trim()
+val amapWebApiKey =
+    (providers.gradleProperty("AMAP_WEB_API_KEY").orNull
+        ?: localProperties.getProperty("AMAP_WEB_API_KEY")
+        ?: "")
+        .trim()
+
+fun toBuildConfigString(value: String): String {
+    return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 }
 
 android {
@@ -19,6 +43,10 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        manifestPlaceholders["AMAP_API_KEY"] = amapApiKey
+        buildConfigField("String", "AMAP_API_KEY", toBuildConfigString(amapApiKey))
+        buildConfigField("String", "AMAP_WEB_API_KEY", toBuildConfigString(amapWebApiKey))
     }
 
     buildTypes {
@@ -79,6 +107,7 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.1")
 
     implementation("org.osmdroid:osmdroid-android:6.1.20")
+    implementation("com.amap.api:3dmap:9.8.3")
 
     implementation(platform("androidx.compose:compose-bom:2024.09.03"))
     implementation("androidx.compose.ui:ui")
