@@ -186,8 +186,8 @@ fun MapControlScreen(
 
     val backgroundBrush = Brush.verticalGradient(
         colors = listOf(
-            Color(0xFFE5EEF8),
-            Color(0xFFF6F9FD),
+            Color(0xFFF7F8FA),
+            Color(0xFFEFF3F7),
         ),
     )
 
@@ -258,40 +258,41 @@ fun MapControlScreen(
             ) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F2942)),
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                 ) {
                     Column(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 15.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text(
                             text = "地图精细选点控制台",
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onSurface,
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            text = "拖动地图后停 0.5 秒，再选择“用地图中心点”",
-                            color = Color(0xFFBED7F0),
+                            text = "拖动地图后稍停, 再选择\"用地图中心点\"",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Text(
-                            text = "当前地图源：${if (uiState.mapProvider == MapProvider.AMAP) "高德(国内优先)" else "OSM(海外优先)"}",
-                            color = Color(0xFFBED7F0),
+                            text = "当前地图源: ${if (uiState.mapProvider == MapProvider.AMAP) "高德, 主要用于国内" else "OSM, 用于国外区域"}",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall,
                         )
                         if (uiState.mapProvider == MapProvider.AMAP && BuildConfig.AMAP_API_KEY.isBlank()) {
                             Text(
-                                text = "未配置高德 Key，建议切换 OSM",
+                                text = "未配置高德 Key, 可切换 OSM",
                                 color = Color(0xFFFFB4AB),
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
                         if (uiState.mapProvider == MapProvider.AMAP && BuildConfig.AMAP_WEB_API_KEY.isBlank()) {
                             Text(
-                                text = "高德搜索未配置 Web服务 Key，搜索建议切到 OSM",
-                                color = Color(0xFFFFD8A8),
+                                text = "高德搜索未配置 Web 服务 Key, 搜索建议可切到 OSM",
+                                color = Color(0xFFC97800),
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
@@ -300,8 +301,8 @@ fun MapControlScreen(
                                 !isLikelyInChina(uiState.camera.lat, uiState.camera.lng)
                         ) {
                             Text(
-                                text = "当前区域在海外，建议切换到 OSM",
-                                color = Color(0xFFFFD8A8),
+                                text = "当前区域可能在国外, 建议切换到 OSM",
+                                color = Color(0xFFC97800),
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
@@ -316,13 +317,13 @@ fun MapControlScreen(
                         onClick = { onMapProviderChanged(MapProvider.AMAP) },
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text(if (uiState.mapProvider == MapProvider.AMAP) "已选：高德" else "高德")
+                        Text(if (uiState.mapProvider == MapProvider.AMAP) "已选: 高德(国内)" else "高德(国内)")
                     }
                     FilledTonalButton(
                         onClick = { onMapProviderChanged(MapProvider.OSM) },
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text(if (uiState.mapProvider == MapProvider.OSM) "已选：OSM" else "OSM")
+                        Text(if (uiState.mapProvider == MapProvider.OSM) "已选: OSM(国外)" else "OSM(国外)")
                     }
                 }
 
@@ -409,11 +410,11 @@ fun MapControlScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Text(
-                            text = "当前生效目标：${uiState.selectedTarget.name}",
+                            text = "当前生效目标: ${uiState.selectedTarget.name}",
                             style = MaterialTheme.typography.titleMedium,
                         )
                         Text(
-                            text = "地图中心候选：${formatCoord(uiState.mapCenterCandidate.latitude)}, ${formatCoord(uiState.mapCenterCandidate.longitude)}",
+                            text = "地图中心候选: ${formatCoord(uiState.mapCenterCandidate.latitude)}, ${formatCoord(uiState.mapCenterCandidate.longitude)}",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -436,7 +437,7 @@ fun MapControlScreen(
                             }
                         }
                         Text(
-                            text = "会话搜索请求数：${uiState.searchRequestCount}",
+                            text = "会话搜索请求数: ${uiState.searchRequestCount}",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -524,7 +525,7 @@ private fun AMapPanel(
             onMapReady(mapView, mapView.map)
         },
         onRelease = { mapView ->
-            // 某些机型销毁时会触发高德 native 崩溃，先仅暂停以保证切页稳定。
+            // 某些机型销毁时会触发高德 native 崩溃, 先仅暂停以保证切页稳定.
             onMapTouchStateChanged(false)
             mapView.onPause()
         },
@@ -626,7 +627,7 @@ private fun CalibrationSelector(
                 onClick = { onModeChanged(CoordinateCalibrationMode.OFF) },
                 modifier = Modifier.weight(1f),
             ) {
-                Text(if (mode == CoordinateCalibrationMode.OFF) "已选：关闭" else "关闭")
+                Text(if (mode == CoordinateCalibrationMode.OFF) "已选: 关闭" else "关闭")
             }
             FilledTonalButton(
                 onClick = { onModeChanged(CoordinateCalibrationMode.MAINLAND_CHINA_COMPAT) },
@@ -634,7 +635,7 @@ private fun CalibrationSelector(
             ) {
                 Text(
                     if (mode == CoordinateCalibrationMode.MAINLAND_CHINA_COMPAT) {
-                        "已选：大陆兼容"
+                        "已选: 大陆兼容"
                     } else {
                         "大陆兼容"
                     },

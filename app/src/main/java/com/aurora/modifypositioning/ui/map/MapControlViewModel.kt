@@ -24,6 +24,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+private const val SEARCH_DEBOUNCE_MS = 600L
+private const val MAX_SEARCH_SUGGESTIONS = 5
+
 class MapControlViewModel(
     private val mapPreferencesStore: MapPreferencesStore,
     private val favoriteRepository: FavoriteLocationRepository,
@@ -80,14 +83,14 @@ class MapControlViewModel(
         }
 
         searchJob = viewModelScope.launch {
-            delay(600)
+            delay(SEARCH_DEBOUNCE_MS)
             _uiState.update { it.copy(isSearching = true) }
 
             runCatching { searchRepository.autocomplete(query) }
                 .onSuccess { suggestions ->
                     _uiState.update {
                         it.copy(
-                            suggestions = suggestions.take(5),
+                            suggestions = suggestions.take(MAX_SEARCH_SUGGESTIONS),
                             isSearching = false,
                             searchRequestCount = AppSessionMetrics.searchRequests,
                         )
