@@ -6,6 +6,7 @@ import android.location.Location
 import android.location.LocationManager
 import android.os.Build
 import com.aurora.modifypositioning.data.MapPreferencesStore
+import com.aurora.modifypositioning.location.distanceMeters
 import com.aurora.modifypositioning.model.DiagnosticLocation
 import com.aurora.modifypositioning.model.DiagnosticSnapshot
 import com.aurora.modifypositioning.model.InjectionReport
@@ -43,12 +44,12 @@ object LocationDiagnosticsReader {
             .getOrDefault(false)
 
         val gps = if (missingPermissions.isEmpty()) {
-            manager?.readProvider(LocationManager.GPS_PROVIDER)
+            manager?.readProvider(LocationManager.GPS_PROVIDER, lastInjection)
         } else {
             null
         }
         val network = if (missingPermissions.isEmpty()) {
-            manager?.readProvider(LocationManager.NETWORK_PROVIDER)
+            manager?.readProvider(LocationManager.NETWORK_PROVIDER, lastInjection)
         } else {
             null
         }
@@ -85,14 +86,20 @@ object LocationDiagnosticsReader {
     }
 
     @SuppressLint("MissingPermission")
-    private fun LocationManager.readProvider(provider: String): DiagnosticLocation? {
+    private fun LocationManager.readProvider(
+        provider: String,
+        lastInjection: InjectionReport?,
+    ): DiagnosticLocation? {
         return runCatching {
             val location = getLastKnownLocation(provider) ?: return null
-            location.toDiagnostic(provider)
+            location.toDiagnostic(provider, lastInjection)
         }.getOrNull()
     }
 
-    private fun Location.toDiagnostic(provider: String): DiagnosticLocation {
+    private fun Location.toDiagnostic(
+        provider: String,
+        lastInjection: InjectionReport?,
+    ): DiagnosticLocation {
         val mock = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             isMock
         } else {
@@ -107,6 +114,14 @@ object LocationDiagnosticsReader {
             accuracyMeters = accuracy,
             timeMillis = time,
             isMock = mock,
+            distanceToLastInjectionMeters = lastInjection?.let {
+                distanceMeters(
+                    startLatitude = latitude,
+                    startLongitude = longitude,
+                    endLatitude = it.latitude,
+                    endLongitude = it.longitude,
+                )
+            },
         )
     }
 }

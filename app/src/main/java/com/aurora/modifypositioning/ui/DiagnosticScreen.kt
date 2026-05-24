@@ -103,6 +103,10 @@ fun DiagnosticScreen(
                     )
                     Text("注入精度：${"%.1f".format(injection.accuracyMeters)} 米")
                     Text("注入时间：${formatTime(injection.timeMillis)}")
+                    Text("验证 mock: ${injection.verificationMockStatus ?: "-"}")
+                    Text("验证距离: ${formatDistance(injection.verificationDistanceMeters)}")
+                    Text("provider 重建时间: ${formatTimeOrDash(injection.providerRebuildTimeMillis)}")
+                    Text("恢复状态: ${injection.recoveryStatus ?: "-"}")
                 }
             }
         }
@@ -149,6 +153,7 @@ private fun DiagnosticLocationCard(
                 Text("坐标：(${location.latitude}, ${location.longitude})")
                 Text("精度：${"%.1f".format(location.accuracyMeters)} 米")
                 Text("mock 标记：${if (location.isMock) "true" else "false"}")
+                Text("距注入目标：${formatDistance(location.distanceToLastInjectionMeters)}")
                 Text("时间：${formatTime(location.timeMillis)}")
             }
         }
@@ -227,4 +232,12 @@ private fun formatPercent(value: Double?): String {
 private fun formatTime(timeMillis: Long): String {
     val sdf = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
     return sdf.format(Date(timeMillis))
+}
+
+private fun formatTimeOrDash(timeMillis: Long?): String {
+    return if (timeMillis == null) {
+        "-"
+    } else {
+        formatTime(timeMillis)
+    }
 }

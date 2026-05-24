@@ -7,6 +7,7 @@ data class DiagnosticLocation(
     val accuracyMeters: Float,
     val timeMillis: Long,
     val isMock: Boolean,
+    val distanceToLastInjectionMeters: Double? = null,
 )
 
 data class DiagnosticSnapshot(

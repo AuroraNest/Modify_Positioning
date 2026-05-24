@@ -6,4 +6,8 @@ data class InjectionReport(
     val longitude: Double,
     val accuracyMeters: Float,
     val timeMillis: Long,
+    val providerRebuildTimeMillis: Long? = null,
+    val verificationMockStatus: String? = null,
+    val verificationDistanceMeters: Double? = null,
+    val recoveryStatus: String? = null,
 )
