@@ -22,6 +22,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -47,9 +48,9 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.amap.api.maps.AMap
 import com.amap.api.maps.CameraUpdateFactory
+import com.amap.api.maps.MapsInitializer
 import com.amap.api.maps.MapView as AMapView
 import com.amap.api.maps.model.LatLng
-import com.aurora.modifypositioning.BuildConfig
 import com.aurora.modifypositioning.model.CoordinateCalibrationMode
 import com.aurora.modifypositioning.model.FavoriteLocation
 import com.aurora.modifypositioning.model.MapProvider
@@ -77,6 +78,9 @@ fun MapControlScreen(
     onSuggestionSelected: (PlaceSuggestion) -> Unit,
     onMapDraggedSelection: (Double, Double) -> Unit,
     onMapProviderChanged: (MapProvider) -> Unit,
+    onAdvancedSettingsVisibleChanged: (Boolean) -> Unit,
+    onAmapAndroidKeyChanged: (String) -> Unit,
+    onAmapWebKeyChanged: (String) -> Unit,
     onUseSearchTarget: () -> Unit,
     onUseMapCenterTarget: () -> Unit,
     onCalibrationModeChanged: (CoordinateCalibrationMode) -> Unit,
@@ -278,30 +282,20 @@ fun MapControlScreen(
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Text(
-                            text = "当前地图源: ${if (uiState.mapProvider == MapProvider.AMAP) "高德, 主要用于国内" else "OSM, 用于国外区域"}",
+                            text = "当前地图源: ${if (uiState.mapProvider == MapProvider.AMAP) "高德" else "OSM"}",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall,
                         )
-                        if (uiState.mapProvider == MapProvider.AMAP && BuildConfig.AMAP_API_KEY.isBlank()) {
+                        if (!uiState.isAmapAndroidAvailable) {
                             Text(
-                                text = "未配置高德 Key, 可切换 OSM",
+                                text = "高德为高级选项, 需要先填写 Android Key",
                                 color = Color(0xFFFFB4AB),
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
-                        if (uiState.mapProvider == MapProvider.AMAP && BuildConfig.AMAP_WEB_API_KEY.isBlank()) {
+                        if (uiState.mapProvider == MapProvider.AMAP && !uiState.isAmapWebSearchAvailable) {
                             Text(
-                                text = "高德搜索未配置 Web 服务 Key, 搜索建议可切到 OSM",
-                                color = Color(0xFFC97800),
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                        if (
-                            uiState.mapProvider == MapProvider.AMAP &&
-                                !isLikelyInChina(uiState.camera.lat, uiState.camera.lng)
-                        ) {
-                            Text(
-                                text = "当前区域可能在国外, 建议切换到 OSM",
+                                text = "高德搜索未配置 Web Key, 可切到 OSM 搜索",
                                 color = Color(0xFFC97800),
                                 style = MaterialTheme.typography.bodySmall,
                             )
@@ -323,8 +317,26 @@ fun MapControlScreen(
                         onClick = { onMapProviderChanged(MapProvider.OSM) },
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text(if (uiState.mapProvider == MapProvider.OSM) "已选: OSM(国外)" else "OSM(国外)")
+                        Text(if (uiState.mapProvider == MapProvider.OSM) "已选: OSM" else "OSM")
                     }
+                }
+
+                TextButton(
+                    onClick = { onAdvancedSettingsVisibleChanged(!uiState.showAdvancedSettings) },
+                    modifier = Modifier.align(Alignment.End),
+                ) {
+                    Text(if (uiState.showAdvancedSettings) "收起高级设置" else "高级设置")
+                }
+
+                if (uiState.showAdvancedSettings) {
+                    AMapAdvancedSettingsCard(
+                        androidKey = uiState.amapAndroidKey,
+                        webKey = uiState.amapWebKey,
+                        hasBuildAndroidKey = uiState.isAmapAndroidAvailable && uiState.amapAndroidKey.isBlank(),
+                        hasBuildWebKey = uiState.isAmapWebSearchAvailable && uiState.amapWebKey.isBlank(),
+                        onAndroidKeyChanged = onAmapAndroidKeyChanged,
+                        onWebKeyChanged = onAmapWebKeyChanged,
+                    )
                 }
 
                 Card(
@@ -479,6 +491,9 @@ private fun AMapPanel(
             )
             .clip(RoundedCornerShape(18.dp)),
         factory = { context ->
+            if (uiState.effectiveAmapAndroidKey.isNotBlank()) {
+                MapsInitializer.setApiKey(uiState.effectiveAmapAndroidKey)
+            }
             AMapView(context).apply {
                 onCreate(Bundle())
                 val aMap = map
@@ -616,6 +631,45 @@ private fun OSMPanel(
 }
 
 @Composable
+private fun AMapAdvancedSettingsCard(
+    androidKey: String,
+    webKey: String,
+    hasBuildAndroidKey: Boolean,
+    hasBuildWebKey: Boolean,
+    onAndroidKeyChanged: (String) -> Unit,
+    onWebKeyChanged: (String) -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("高德高级设置", style = MaterialTheme.typography.titleSmall)
+            OutlinedTextField(
+                value = androidKey,
+                onValueChange = onAndroidKeyChanged,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Android Key") },
+                supportingText = {
+                    Text(if (hasBuildAndroidKey) "当前使用构建内置 Android Key" else "留空时不启用高德底图")
+                },
+            )
+            OutlinedTextField(
+                value = webKey,
+                onValueChange = onWebKeyChanged,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Web Key") },
+                supportingText = {
+                    Text(if (hasBuildWebKey) "当前使用构建内置 Web Key" else "留空时高德搜索不可用")
+                },
+            )
+        }
+    }
+}
+
+@Composable
 private fun CalibrationSelector(
     mode: CoordinateCalibrationMode,
     onModeChanged: (CoordinateCalibrationMode) -> Unit,
@@ -647,8 +701,4 @@ private fun CalibrationSelector(
 
 private fun formatCoord(value: Double): String {
     return "%.6f".format(value)
-}
-
-private fun isLikelyInChina(lat: Double, lng: Double): Boolean {
-    return lat in 3.0..54.0 && lng in 73.0..136.0
 }

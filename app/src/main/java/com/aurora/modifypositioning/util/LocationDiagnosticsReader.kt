@@ -6,6 +6,7 @@ import android.location.Location
 import android.location.LocationManager
 import android.os.Build
 import com.aurora.modifypositioning.data.MapPreferencesStore
+import com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore
 import com.aurora.modifypositioning.location.distanceMeters
 import com.aurora.modifypositioning.model.DiagnosticLocation
 import com.aurora.modifypositioning.model.DiagnosticSnapshot
@@ -55,6 +56,7 @@ object LocationDiagnosticsReader {
         }
 
         val calibrationMode = runBlocking { mapPreferencesStore.getCalibrationMode() }
+        val fused = FusedLocationDiagnosticsStore.state.value
 
         return DiagnosticSnapshot(
             generatedAtMillis = System.currentTimeMillis(),
@@ -64,6 +66,10 @@ object LocationDiagnosticsReader {
             networkEnabled = networkEnabled,
             gpsLastKnown = gps,
             networkLastKnown = network,
+            fusedAvailable = fused.available,
+            fusedMockModeEnabled = fused.mockModeEnabled,
+            fusedLastInjectionTimeMillis = fused.lastInjectionTimeMillis,
+            fusedLastError = fused.lastError,
             appState = state,
             lastInjection = lastInjection,
             movementMode = movementMode,

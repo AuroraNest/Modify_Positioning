@@ -3,6 +3,7 @@ package com.aurora.modifypositioning.ui.map
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.aurora.modifypositioning.BuildConfig
 import com.aurora.modifypositioning.data.FavoriteLocationRepository
 import com.aurora.modifypositioning.data.MapPreferencesStore
 import com.aurora.modifypositioning.data.PlaceSearchRepository
@@ -14,6 +15,8 @@ import com.aurora.modifypositioning.model.MapProvider
 import com.aurora.modifypositioning.model.PlaceSuggestion
 import com.aurora.modifypositioning.model.SelectionSource
 import com.aurora.modifypositioning.model.TargetLocation
+import com.aurora.modifypositioning.model.effectiveAmapAndroidKey
+import com.aurora.modifypositioning.model.resolveMapKeyAvailability
 import com.aurora.modifypositioning.util.AppSessionMetrics
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -43,6 +46,7 @@ class MapControlViewModel(
     init {
         observeFavorites()
         observeCalibrationMode()
+        observeMapProviderSettings()
         restoreInitialState()
     }
 
@@ -69,6 +73,17 @@ class MapControlViewModel(
         val searchRepository = when (_uiState.value.mapProvider) {
             MapProvider.AMAP -> amapPlaceSearchRepository
             MapProvider.OSM -> osmPlaceSearchRepository
+        }
+
+        if (_uiState.value.mapProvider == MapProvider.AMAP && !_uiState.value.isAmapWebSearchAvailable) {
+            _uiState.update {
+                it.copy(
+                    suggestions = emptyList(),
+                    isSearching = false,
+                    searchError = "请先在高级设置中填写高德 Web Key",
+                )
+            }
+            return
         }
 
         if (searchRepository == null) {
@@ -159,6 +174,21 @@ class MapControlViewModel(
     }
 
     fun setMapProvider(provider: MapProvider) {
+        if (provider == MapProvider.AMAP && !_uiState.value.isAmapAndroidAvailable) {
+            _uiState.update {
+                it.copy(
+                    mapProvider = MapProvider.OSM,
+                    suggestions = emptyList(),
+                    isSearching = false,
+                    searchError = "请先在高级设置中填写高德 Android Key",
+                )
+            }
+            viewModelScope.launch {
+                mapPreferencesStore.setMapProvider(MapProvider.OSM)
+            }
+            return
+        }
+
         _uiState.update {
             it.copy(
                 mapProvider = provider,
@@ -167,16 +197,27 @@ class MapControlViewModel(
                 searchError = null,
             )
         }
+        viewModelScope.launch {
+            mapPreferencesStore.setMapProvider(provider)
+        }
     }
 
-    fun autoSwitchProviderForCurrentCamera() {
-        val camera = _uiState.value.camera
-        val provider = if (isLikelyInChina(camera.lat, camera.lng)) MapProvider.AMAP else MapProvider.OSM
-        _uiState.update { it.copy(mapProvider = provider) }
+    fun setAdvancedSettingsVisible(visible: Boolean) {
+        _uiState.update { it.copy(showAdvancedSettings = visible) }
     }
 
-    private fun isLikelyInChina(lat: Double, lng: Double): Boolean {
-        return lat in 3.0..54.0 && lng in 73.0..136.0
+    fun onAmapAndroidKeyChanged(value: String) {
+        _uiState.updateSettingsKeys(amapAndroidKey = value)
+        viewModelScope.launch {
+            mapPreferencesStore.setAmapAndroidKey(value)
+        }
+    }
+
+    fun onAmapWebKeyChanged(value: String) {
+        _uiState.updateSettingsKeys(amapWebKey = value)
+        viewModelScope.launch {
+            mapPreferencesStore.setAmapWebKey(value)
+        }
     }
 
     fun onManualLatChanged(value: String) {
@@ -286,16 +327,6 @@ class MapControlViewModel(
                     mapCenterCandidate = target ?: it.mapCenterCandidate,
                     lastSearchTarget = target ?: it.lastSearchTarget,
                     camera = camera ?: it.camera,
-                    mapProvider = if (
-                        isLikelyInChina(
-                            (target ?: it.selectedTarget).latitude,
-                            (target ?: it.selectedTarget).longitude,
-                        )
-                    ) {
-                        MapProvider.AMAP
-                    } else {
-                        MapProvider.OSM
-                    },
                     searchRequestCount = AppSessionMetrics.searchRequests,
                 )
             }
@@ -314,6 +345,37 @@ class MapControlViewModel(
         viewModelScope.launch {
             mapPreferencesStore.calibrationModeFlow.collect { mode ->
                 _uiState.update { it.copy(calibrationMode = mode) }
+            }
+        }
+    }
+
+    private fun observeMapProviderSettings() {
+        viewModelScope.launch {
+            mapPreferencesStore.mapProviderSettingsFlow.collect { settings ->
+                val availability = resolveMapKeyAvailability(
+                    runtimeAndroidKey = settings.amapAndroidKey,
+                    buildAndroidKey = BuildConfig.AMAP_API_KEY,
+                    runtimeWebKey = settings.amapWebKey,
+                    buildWebKey = BuildConfig.AMAP_WEB_API_KEY,
+                )
+                val provider = if (settings.mapProvider == MapProvider.AMAP && !availability.hasAmapAndroidKey) {
+                    MapProvider.OSM
+                } else {
+                    settings.mapProvider
+                }
+                _uiState.update {
+                    it.copy(
+                        mapProvider = provider,
+                        amapAndroidKey = settings.amapAndroidKey,
+                        amapWebKey = settings.amapWebKey,
+                        effectiveAmapAndroidKey = effectiveAmapAndroidKey(
+                            runtimeAndroidKey = settings.amapAndroidKey,
+                            buildAndroidKey = BuildConfig.AMAP_API_KEY,
+                        ),
+                        isAmapAndroidAvailable = availability.hasAmapAndroidKey,
+                        isAmapWebSearchAvailable = availability.hasAmapWebKey,
+                    )
+                }
             }
         }
     }
@@ -337,6 +399,32 @@ class MapControlViewModel(
                 label = target.name.ifBlank { source.name },
                 lat = target.latitude,
                 lng = target.longitude,
+            )
+        }
+    }
+
+    private fun MutableStateFlow<MapControlUiState>.updateSettingsKeys(
+        amapAndroidKey: String? = null,
+        amapWebKey: String? = null,
+    ) {
+        update { state ->
+            val nextAndroidKey = amapAndroidKey ?: state.amapAndroidKey
+            val nextWebKey = amapWebKey ?: state.amapWebKey
+            val availability = resolveMapKeyAvailability(
+                runtimeAndroidKey = nextAndroidKey,
+                buildAndroidKey = BuildConfig.AMAP_API_KEY,
+                runtimeWebKey = nextWebKey,
+                buildWebKey = BuildConfig.AMAP_WEB_API_KEY,
+            )
+            state.copy(
+                amapAndroidKey = nextAndroidKey,
+                amapWebKey = nextWebKey,
+                effectiveAmapAndroidKey = effectiveAmapAndroidKey(
+                    runtimeAndroidKey = nextAndroidKey,
+                    buildAndroidKey = BuildConfig.AMAP_API_KEY,
+                ),
+                isAmapAndroidAvailable = availability.hasAmapAndroidKey,
+                isAmapWebSearchAvailable = availability.hasAmapWebKey,
             )
         }
     }

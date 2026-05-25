@@ -108,6 +108,7 @@ dependencies {
 
     implementation("org.osmdroid:osmdroid-android:6.1.20")
     implementation("com.amap.api:3dmap:9.8.3")
+    implementation("com.google.android.gms:play-services-location:21.3.0")
 
     implementation(platform("androidx.compose:compose-bom:2024.09.03"))
     implementation("androidx.compose.ui:ui")

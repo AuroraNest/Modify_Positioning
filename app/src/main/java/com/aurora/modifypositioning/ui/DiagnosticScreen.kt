@@ -117,12 +117,26 @@ fun DiagnosticScreen(
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text("Fused 定位状态")
+                Text("可用: ${if (snapshot.fusedAvailable) "true" else "false"}")
+                Text("mock mode: ${if (snapshot.fusedMockModeEnabled) "true" else "false"}")
+                Text("最近注入: ${formatTimeOrDash(snapshot.fusedLastInjectionTimeMillis)}")
+                Text("最近错误: ${snapshot.fusedLastError ?: "-"}")
+            }
+        }
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text("判断建议")
-                Text("1) 若本页显示 mock=true，但高德仍是真实位置，说明高德做了反模拟拦截。")
-                Text("2) 若本页注入坐标和最近位置都不变，优先检查“模拟位置信息应用”是否仍为本 App。")
-                Text("3) 若服务状态异常，请先停止再开始，并保持应用后台不被清理。")
+                Text("1) 多数使用系统定位或 fused 定位的 app 可生效; 显式检测 mock 或服务端校验的 app 可能无效")
+                Text("2) 若本页注入坐标和最近位置都不变, 优先检查模拟位置信息应用是否仍为本 App")
+                Text("3) ${realLocationOverwriteHint(snapshot)}")
+                Text("4) 若服务状态异常, 请先停止再开始, 并保持应用后台不被清理")
             }
         }
 
@@ -240,4 +254,21 @@ private fun formatTimeOrDash(timeMillis: Long?): String {
     } else {
         formatTime(timeMillis)
     }
+}
+
+private fun realLocationOverwriteHint(snapshot: DiagnosticSnapshot): String {
+    val recovery = snapshot.lastInjection?.recoveryStatus
+    if (!recovery.isNullOrBlank()) {
+        return "检测到可能被真实定位覆盖: $recovery"
+    }
+    val locations = listOfNotNull(snapshot.gpsLastKnown, snapshot.networkLastKnown)
+    val nonMock = locations.firstOrNull { !it.isMock }
+    if (nonMock != null) {
+        return "检测到 ${nonMock.provider} 最近位置 mock=false, 可能被真实定位覆盖"
+    }
+    val far = locations.firstOrNull { (it.distanceToLastInjectionMeters ?: 0.0) > 75.0 }
+    if (far != null) {
+        return "检测到 ${far.provider} 距注入目标较远, 可能被真实定位覆盖"
+    }
+    return "若目标 app 仍显示真实位置, 可能是其读取了其他定位源或服务端校验"
 }

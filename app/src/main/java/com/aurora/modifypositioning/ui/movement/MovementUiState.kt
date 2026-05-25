@@ -2,6 +2,7 @@ package com.aurora.modifypositioning.ui.movement
 
 import com.aurora.modifypositioning.model.CustomRouteDraft
 import com.aurora.modifypositioning.model.DEFAULT_TARGET
+import com.aurora.modifypositioning.model.MapProvider
 import com.aurora.modifypositioning.model.MovementMode
 import com.aurora.modifypositioning.model.MovementPageTab
 import com.aurora.modifypositioning.model.MovementPoint
@@ -38,5 +39,7 @@ data class MovementUiState(
     val isSearching: Boolean = false,
     val searchError: String? = null,
     val searchForStart: Boolean = false,
+    val mapProvider: MapProvider = MapProvider.OSM,
+    val effectiveAmapAndroidKey: String = "",
+    val isAmapAndroidAvailable: Boolean = false,
 )
-

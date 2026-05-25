@@ -7,4 +7,7 @@ interface LocationInjector {
     fun updateTarget(target: TargetLocation)
     fun pause()
     fun stop()
+    fun cleanup() {
+        stop()
+    }
 }

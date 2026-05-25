@@ -13,10 +13,20 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 class AMapWebPlaceSearchRepository(
-    private val apiKey: String,
+    private val apiKeyProvider: suspend () -> String,
     private val endpoint: String = "https://restapi.amap.com/v3/assistant/inputtips",
     private val cacheTtlMillis: Long = 5 * 60 * 1000L,
 ) : PlaceSearchRepository {
+
+    constructor(
+        apiKey: String,
+        endpoint: String = "https://restapi.amap.com/v3/assistant/inputtips",
+        cacheTtlMillis: Long = 5 * 60 * 1000L,
+    ) : this(
+        apiKeyProvider = { apiKey },
+        endpoint = endpoint,
+        cacheTtlMillis = cacheTtlMillis,
+    )
 
     private val cache = LinkedHashMap<String, CacheEntry>()
 
@@ -25,6 +35,7 @@ class AMapWebPlaceSearchRepository(
         if (normalized.length < 2) {
             return emptyList()
         }
+        val apiKey = apiKeyProvider().trim()
         if (apiKey.isBlank()) {
             throw IllegalStateException("高德搜索未配置 Key")
         }
@@ -38,7 +49,7 @@ class AMapWebPlaceSearchRepository(
         AppSessionMetrics.increaseSearchRequests()
         val suggestions = runCatching {
             withContext(Dispatchers.IO) {
-                requestSuggestions(normalized)
+                requestSuggestions(normalized, apiKey)
             }.take(5)
         }.getOrElse { throwable ->
             throw IllegalStateException(resolveFriendlyMessage(throwable))
@@ -57,7 +68,7 @@ class AMapWebPlaceSearchRepository(
         return suggestions
     }
 
-    private fun requestSuggestions(query: String): List<PlaceSuggestion> {
+    private fun requestSuggestions(query: String, apiKey: String): List<PlaceSuggestion> {
         val encoded = URLEncoder.encode(query, StandardCharsets.UTF_8.name())
         val url = "$endpoint?key=$apiKey&keywords=$encoded&datatype=all&citylimit=false&output=JSON"
         val connection = (java.net.URL(url).openConnection() as HttpURLConnection).apply {

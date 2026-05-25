@@ -3,6 +3,7 @@ package com.aurora.modifypositioning.ui.movement
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.aurora.modifypositioning.BuildConfig
 import com.aurora.modifypositioning.data.MapPreferencesStore
 import com.aurora.modifypositioning.data.PlaceSearchRepository
 import com.aurora.modifypositioning.data.RouteRepository
@@ -11,6 +12,7 @@ import com.aurora.modifypositioning.domain.CustomRouteBuilder
 import com.aurora.modifypositioning.domain.MockController
 import com.aurora.modifypositioning.domain.routing.RoutePlanner
 import com.aurora.modifypositioning.model.CustomRouteDraft
+import com.aurora.modifypositioning.model.MapProvider
 import com.aurora.modifypositioning.model.MapSelection
 import com.aurora.modifypositioning.model.MovementMode
 import com.aurora.modifypositioning.model.MovementPageTab
@@ -23,6 +25,8 @@ import com.aurora.modifypositioning.model.RoutePoint
 import com.aurora.modifypositioning.model.SelectionSource
 import com.aurora.modifypositioning.model.TargetLocation
 import com.aurora.modifypositioning.model.TravelMode
+import com.aurora.modifypositioning.model.effectiveAmapAndroidKey
+import com.aurora.modifypositioning.model.resolveMapKeyAvailability
 import com.aurora.modifypositioning.util.AppSessionMetrics
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,6 +55,7 @@ class MovementViewModel(
     init {
         observeController()
         observeRouteStorage()
+        observeMapProviderSettings()
         loadInitialPreferences()
     }
 
@@ -505,6 +510,34 @@ class MovementViewModel(
         viewModelScope.launch {
             routeRepository.observeRecentRoutes().collectLatest { routes ->
                 _uiState.update { it.copy(recentRoutes = routes) }
+            }
+        }
+    }
+
+    private fun observeMapProviderSettings() {
+        viewModelScope.launch {
+            mapPreferencesStore.mapProviderSettingsFlow.collectLatest { settings ->
+                val availability = resolveMapKeyAvailability(
+                    runtimeAndroidKey = settings.amapAndroidKey,
+                    buildAndroidKey = BuildConfig.AMAP_API_KEY,
+                    runtimeWebKey = settings.amapWebKey,
+                    buildWebKey = BuildConfig.AMAP_WEB_API_KEY,
+                )
+                val provider = if (settings.mapProvider == MapProvider.AMAP && availability.hasAmapAndroidKey) {
+                    MapProvider.AMAP
+                } else {
+                    MapProvider.OSM
+                }
+                _uiState.update {
+                    it.copy(
+                        mapProvider = provider,
+                        effectiveAmapAndroidKey = effectiveAmapAndroidKey(
+                            runtimeAndroidKey = settings.amapAndroidKey,
+                            buildAndroidKey = BuildConfig.AMAP_API_KEY,
+                        ),
+                        isAmapAndroidAvailable = availability.hasAmapAndroidKey,
+                    )
+                }
             }
         }
     }

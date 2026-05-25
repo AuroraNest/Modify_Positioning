@@ -2,6 +2,7 @@ package com.aurora.modifypositioning.ui
 
 import android.graphics.Color as AndroidColor
 import android.os.Bundle
+import android.preference.PreferenceManager
 import android.view.MotionEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -45,12 +46,14 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.amap.api.maps.AMap
 import com.amap.api.maps.CameraUpdateFactory
-import com.amap.api.maps.MapView
+import com.amap.api.maps.MapsInitializer
+import com.amap.api.maps.MapView as AMapView
 import com.amap.api.maps.model.LatLng
 import com.amap.api.maps.model.Marker
 import com.amap.api.maps.model.MarkerOptions
 import com.amap.api.maps.model.Polyline
 import com.amap.api.maps.model.PolylineOptions
+import com.aurora.modifypositioning.model.MapProvider
 import com.aurora.modifypositioning.model.MovementPageTab
 import com.aurora.modifypositioning.model.MovementPoint
 import com.aurora.modifypositioning.model.MovementState
@@ -61,6 +64,15 @@ import com.aurora.modifypositioning.model.RoutePoint
 import com.aurora.modifypositioning.model.TravelMode
 import com.aurora.modifypositioning.ui.components.PlaceSearchBar
 import com.aurora.modifypositioning.ui.movement.MovementUiState
+import org.osmdroid.config.Configuration
+import org.osmdroid.events.MapListener
+import org.osmdroid.events.ScrollEvent
+import org.osmdroid.events.ZoomEvent
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView as OsmMapView
+import org.osmdroid.views.overlay.Marker as OsmMarker
+import org.osmdroid.views.overlay.Polyline as OsmPolyline
 
 @Composable
 fun MovementControlScreen(
@@ -139,7 +151,7 @@ fun MovementControlScreen(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
-                        text = "路线模拟移动（高德底图）",
+                        text = "路线模拟移动（${if (uiState.mapProvider == MapProvider.AMAP) "高德底图" else "OSM 底图"}）",
                         color = Color.White,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
@@ -181,6 +193,8 @@ fun MovementControlScreen(
                     currentLng = uiState.currentTarget.longitude,
                     trace = uiState.tracePoints,
                     route = activeRoutePoints,
+                    mapProvider = uiState.mapProvider,
+                    effectiveAmapAndroidKey = uiState.effectiveAmapAndroidKey,
                     onMapTouchStateChanged = { interacting ->
                         mapInteracting = interacting
                     },
@@ -505,11 +519,45 @@ private fun MovementMap(
     currentLng: Double,
     trace: List<MovementPoint>,
     route: List<RoutePoint>,
+    mapProvider: MapProvider,
+    effectiveAmapAndroidKey: String,
+    onMapTouchStateChanged: (Boolean) -> Unit,
+    onCenterChanged: (Double, Double) -> Unit,
+) {
+    if (mapProvider == MapProvider.AMAP && effectiveAmapAndroidKey.isNotBlank()) {
+        MovementAMap(
+            currentLat = currentLat,
+            currentLng = currentLng,
+            trace = trace,
+            route = route,
+            effectiveAmapAndroidKey = effectiveAmapAndroidKey,
+            onMapTouchStateChanged = onMapTouchStateChanged,
+            onCenterChanged = onCenterChanged,
+        )
+    } else {
+        MovementOsmMap(
+            currentLat = currentLat,
+            currentLng = currentLng,
+            trace = trace,
+            route = route,
+            onMapTouchStateChanged = onMapTouchStateChanged,
+            onCenterChanged = onCenterChanged,
+        )
+    }
+}
+
+@Composable
+private fun MovementAMap(
+    currentLat: Double,
+    currentLng: Double,
+    trace: List<MovementPoint>,
+    route: List<RoutePoint>,
+    effectiveAmapAndroidKey: String,
     onMapTouchStateChanged: (Boolean) -> Unit,
     onCenterChanged: (Double, Double) -> Unit,
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
-    var mapViewRef by remember { mutableStateOf<MapView?>(null) }
+    var mapViewRef by remember { mutableStateOf<AMapView?>(null) }
     var aMapRef by remember { mutableStateOf<AMap?>(null) }
     var currentMarker by remember { mutableStateOf<Marker?>(null) }
     var traceLine by remember { mutableStateOf<Polyline?>(null) }
@@ -541,7 +589,8 @@ private fun MovementMap(
             .fillMaxSize()
             .clip(RoundedCornerShape(18.dp)),
         factory = { context ->
-            MapView(context).apply {
+            MapsInitializer.setApiKey(effectiveAmapAndroidKey)
+            AMapView(context).apply {
                 onCreate(Bundle())
                 val aMap = map
                 val start = LatLng(currentLat, currentLng)
@@ -628,6 +677,125 @@ private fun MovementMap(
             // 某些机型销毁时会触发高德 native 崩溃，先仅暂停以保证切页稳定。
             onMapTouchStateChanged(false)
             mapView.onPause()
+        },
+    )
+}
+
+@Composable
+private fun MovementOsmMap(
+    currentLat: Double,
+    currentLng: Double,
+    trace: List<MovementPoint>,
+    route: List<RoutePoint>,
+    onMapTouchStateChanged: (Boolean) -> Unit,
+    onCenterChanged: (Double, Double) -> Unit,
+) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var mapViewRef by remember { mutableStateOf<OsmMapView?>(null) }
+    var currentMarker by remember { mutableStateOf<OsmMarker?>(null) }
+    var traceLine by remember { mutableStateOf<OsmPolyline?>(null) }
+    var routeLine by remember { mutableStateOf<OsmPolyline?>(null) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> mapViewRef?.onResume()
+                Lifecycle.Event.ON_PAUSE -> mapViewRef?.onPause()
+                Lifecycle.Event.ON_DESTROY -> mapViewRef?.onDetach()
+                else -> Unit
+            }
+        }
+
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            mapViewRef = null
+            currentMarker = null
+            traceLine = null
+            routeLine = null
+        }
+    }
+
+    AndroidView(
+        modifier = Modifier
+            .fillMaxSize()
+            .clip(RoundedCornerShape(18.dp)),
+        factory = { context ->
+            Configuration.getInstance().load(
+                context,
+                PreferenceManager.getDefaultSharedPreferences(context),
+            )
+            Configuration.getInstance().userAgentValue = context.packageName
+            OsmMapView(context).apply {
+                setTileSource(TileSourceFactory.MAPNIK)
+                setMultiTouchControls(true)
+                isTilesScaledToDpi = true
+                setBuiltInZoomControls(false)
+                controller.setZoom(16.0)
+                controller.setCenter(GeoPoint(currentLat, currentLng))
+
+                currentMarker = OsmMarker(this).apply {
+                    position = GeoPoint(currentLat, currentLng)
+                    title = "当前位置"
+                    setAnchor(OsmMarker.ANCHOR_CENTER, OsmMarker.ANCHOR_BOTTOM)
+                }.also { overlays.add(it) }
+
+                routeLine = OsmPolyline().apply {
+                    outlinePaint.color = AndroidColor.parseColor("#1E6091")
+                    outlinePaint.strokeWidth = 8f
+                    setPoints(route.map { GeoPoint(it.lat, it.lng) })
+                }.also { overlays.add(it) }
+
+                traceLine = OsmPolyline().apply {
+                    outlinePaint.color = AndroidColor.parseColor("#D62828")
+                    outlinePaint.strokeWidth = 7f
+                    setPoints(trace.map { GeoPoint(it.lat, it.lng) })
+                }.also { overlays.add(it) }
+
+                addMapListener(
+                    object : MapListener {
+                        override fun onScroll(event: ScrollEvent): Boolean {
+                            if (!this@apply.isAnimating) {
+                                val center = mapCenter
+                                onCenterChanged(center.latitude, center.longitude)
+                            }
+                            return true
+                        }
+
+                        override fun onZoom(event: ZoomEvent): Boolean {
+                            return true
+                        }
+                    },
+                )
+                setOnTouchListener { _, event ->
+                    when (event?.actionMasked) {
+                        MotionEvent.ACTION_DOWN,
+                        MotionEvent.ACTION_MOVE,
+                        -> onMapTouchStateChanged(true)
+
+                        MotionEvent.ACTION_UP,
+                        MotionEvent.ACTION_CANCEL,
+                        -> onMapTouchStateChanged(false)
+                    }
+                    false
+                }
+                mapViewRef = this
+            }
+        },
+        update = { mapView ->
+            val currentPoint = GeoPoint(currentLat, currentLng)
+            currentMarker?.position = currentPoint
+            traceLine?.setPoints(trace.map { GeoPoint(it.lat, it.lng) })
+            routeLine?.setPoints(route.map { GeoPoint(it.lat, it.lng) })
+            if (!mapView.isAnimating) {
+                mapView.controller.animateTo(currentPoint)
+            }
+            mapView.invalidate()
+        },
+        onRelease = { mapView ->
+            onMapTouchStateChanged(false)
+            mapView.onPause()
+            mapView.onDetach()
         },
     )
 }

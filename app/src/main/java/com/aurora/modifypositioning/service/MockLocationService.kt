@@ -23,6 +23,9 @@ import com.aurora.modifypositioning.domain.SimulationTick
 import com.aurora.modifypositioning.domain.StepResult
 import com.aurora.modifypositioning.domain.calibration.MainlandCoordinateCalibrator
 import com.aurora.modifypositioning.location.AndroidLocationInjector
+import com.aurora.modifypositioning.location.CompositeLocationInjector
+import com.aurora.modifypositioning.location.FusedLocationInjector
+import com.aurora.modifypositioning.location.LocationInjector
 import com.aurora.modifypositioning.model.CoordinateCalibrationMode
 import com.aurora.modifypositioning.model.DEFAULT_TARGET
 import com.aurora.modifypositioning.model.ENHANCED_UPDATE_INTERVAL_MS
@@ -47,7 +50,7 @@ import kotlinx.coroutines.runBlocking
 
 class MockLocationService : Service() {
 
-    private lateinit var injector: AndroidLocationInjector
+    private lateinit var injector: LocationInjector
     private val controller = MockControllerStore.instance
     private lateinit var mapPreferencesStore: MapPreferencesStore
     private val coordinateCalibrator = MainlandCoordinateCalibrator()
@@ -64,16 +67,27 @@ class MockLocationService : Service() {
         super.onCreate()
         createNotificationChannel(this)
         mapPreferencesStore = MapPreferencesStore(this)
-        injector = AndroidLocationInjector(
-            context = this,
-            updateIntervalMs = ENHANCED_UPDATE_INTERVAL_MS,
-            onError = { error ->
-                controller.onError(error)
-                refreshNotification()
-            },
-            onInjected = { report ->
-                controller.onInjected(report)
-            },
+        val onInjectionError: (String) -> Unit = { error ->
+            controller.onError(error)
+            refreshNotification()
+        }
+        injector = CompositeLocationInjector(
+            injectors = listOf(
+                AndroidLocationInjector(
+                    context = this,
+                    updateIntervalMs = ENHANCED_UPDATE_INTERVAL_MS,
+                    onError = onInjectionError,
+                    onInjected = { report ->
+                        controller.onInjected(report)
+                    },
+                ),
+                FusedLocationInjector(
+                    context = this,
+                    updateIntervalMs = ENHANCED_UPDATE_INTERVAL_MS,
+                    onError = onInjectionError,
+                ),
+            ),
+            onError = onInjectionError,
         )
         if (shouldKeepRunning()) {
             handleStart()
@@ -416,7 +430,7 @@ class MockLocationService : Service() {
     override fun onDestroy() {
         stopRandomWalkLoop()
         stopRouteMovementLoop()
-        injector.dispose()
+        injector.cleanup()
         releaseWakeLock()
         serviceScope.cancel()
         if (!explicitStop && shouldKeepRunning()) {

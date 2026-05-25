@@ -29,6 +29,7 @@ import com.aurora.modifypositioning.data.RouteRepository
 import com.aurora.modifypositioning.data.local.LocationDatabase
 import com.aurora.modifypositioning.domain.MockControllerStore
 import com.aurora.modifypositioning.domain.routing.OsrmRoutePlanner
+import com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore
 import com.aurora.modifypositioning.model.MapSelection
 import com.aurora.modifypositioning.model.MovementMode
 import com.aurora.modifypositioning.model.MovementPageTab
@@ -36,6 +37,7 @@ import com.aurora.modifypositioning.model.RouteInputMode
 import com.aurora.modifypositioning.model.SelectionSource
 import com.aurora.modifypositioning.model.TargetLocation
 import com.aurora.modifypositioning.model.TravelMode
+import com.aurora.modifypositioning.model.effectiveAmapWebKey
 import com.aurora.modifypositioning.service.MockLocationService
 import com.aurora.modifypositioning.ui.DiagnosticScreen
 import com.aurora.modifypositioning.ui.MainControlScreen
@@ -74,6 +76,7 @@ class MainActivity : ComponentActivity() {
             val plannedRoute by controller.plannedRoute.collectAsState()
             val travelMode by controller.travelMode.collectAsState()
             val routeProgress by controller.routeProgress.collectAsState()
+            val fusedDiagnostics by FusedLocationDiagnosticsStore.state.collectAsState()
 
             val mapPreferencesStore = remember { MapPreferencesStore(this@MainActivity) }
             val favoriteRepository = remember {
@@ -95,7 +98,14 @@ class MainActivity : ComponentActivity() {
                 )
             }
             val amapPlaceSearchRepository = remember {
-                AMapWebPlaceSearchRepository(apiKey = BuildConfig.AMAP_WEB_API_KEY)
+                AMapWebPlaceSearchRepository(
+                    apiKeyProvider = {
+                        effectiveAmapWebKey(
+                            runtimeWebKey = mapPreferencesStore.getAmapWebKey(),
+                            buildWebKey = BuildConfig.AMAP_WEB_API_KEY,
+                        )
+                    },
+                )
             }
 
             val mapViewModel: MapControlViewModel = viewModel(
@@ -241,6 +251,7 @@ class MainActivity : ComponentActivity() {
                                 movementTrace.size,
                                 plannedRoute?.id,
                                 routeProgress?.percent,
+                                fusedDiagnostics,
                             ) {
                 refreshDiagnostics()
             }
@@ -276,6 +287,9 @@ class MainActivity : ComponentActivity() {
                                 onSuggestionSelected = { mapViewModel.onSuggestionSelected(it) },
                                 onMapDraggedSelection = { lat, lng -> mapViewModel.onMapDraggedSelection(lat, lng) },
                                 onMapProviderChanged = { mapViewModel.setMapProvider(it) },
+                                onAdvancedSettingsVisibleChanged = { mapViewModel.setAdvancedSettingsVisible(it) },
+                                onAmapAndroidKeyChanged = { mapViewModel.onAmapAndroidKeyChanged(it) },
+                                onAmapWebKeyChanged = { mapViewModel.onAmapWebKeyChanged(it) },
                                 onUseSearchTarget = { mapViewModel.applyLastSearchTarget() },
                                 onUseMapCenterTarget = { mapViewModel.applyMapCenterAsTarget() },
                                 onCalibrationModeChanged = { mapViewModel.setCalibrationMode(it) },

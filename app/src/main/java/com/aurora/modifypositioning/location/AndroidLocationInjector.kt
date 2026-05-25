@@ -295,7 +295,7 @@ class AndroidLocationInjector(
         providersReady = false
     }
 
-    fun dispose() {
+    override fun cleanup() {
         stop()
         scope.cancel()
     }

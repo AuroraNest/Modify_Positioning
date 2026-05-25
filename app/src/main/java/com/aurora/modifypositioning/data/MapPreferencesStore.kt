@@ -1,6 +1,7 @@
 package com.aurora.modifypositioning.data
 
 import android.content.Context
+import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
@@ -11,53 +12,67 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.aurora.modifypositioning.model.CoordinateCalibrationMode
 import com.aurora.modifypositioning.model.MapCameraSnapshot
+import com.aurora.modifypositioning.model.MapProvider
+import com.aurora.modifypositioning.model.MapProviderSettings
 import com.aurora.modifypositioning.model.MovementPageTab
 import com.aurora.modifypositioning.model.MovementMode
 import com.aurora.modifypositioning.model.RandomWalkConfig
 import com.aurora.modifypositioning.model.TargetLocation
 import com.aurora.modifypositioning.model.TravelMode
+import com.aurora.modifypositioning.model.resolveMapProvider
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.mapPrefsDataStore by preferencesDataStore(name = "map_prefs")
 
-class MapPreferencesStore(
-    private val context: Context,
+class MapPreferencesStore internal constructor(
+    private val dataStore: DataStore<Preferences>,
 ) {
 
-    val calibrationModeFlow: Flow<CoordinateCalibrationMode> = context.mapPrefsDataStore.data
+    constructor(context: Context) : this(context.mapPrefsDataStore)
+
+    val calibrationModeFlow: Flow<CoordinateCalibrationMode> = dataStore.data
         .map { prefs ->
             val raw = prefs[Keys.CALIBRATION_MODE] ?: CoordinateCalibrationMode.OFF.name
             runCatching { CoordinateCalibrationMode.valueOf(raw) }.getOrDefault(CoordinateCalibrationMode.OFF)
         }
 
-    val movementModeFlow: Flow<MovementMode> = context.mapPrefsDataStore.data
+    val movementModeFlow: Flow<MovementMode> = dataStore.data
         .map { prefs ->
             val raw = prefs[Keys.MOVEMENT_MODE] ?: MovementMode.FIXED.name
             runCatching { MovementMode.valueOf(raw) }.getOrDefault(MovementMode.FIXED)
         }
 
-    val movementTabFlow: Flow<MovementPageTab> = context.mapPrefsDataStore.data
+    val movementTabFlow: Flow<MovementPageTab> = dataStore.data
         .map { prefs ->
             val raw = prefs[Keys.MOVEMENT_TAB] ?: MovementPageTab.RANDOM_WALK.name
             runCatching { MovementPageTab.valueOf(raw) }.getOrDefault(MovementPageTab.RANDOM_WALK)
         }
 
-    val defaultTravelModeFlow: Flow<TravelMode> = context.mapPrefsDataStore.data
+    val defaultTravelModeFlow: Flow<TravelMode> = dataStore.data
         .map { prefs ->
             val raw = prefs[Keys.DEFAULT_TRAVEL_MODE] ?: TravelMode.WALK.name
             runCatching { TravelMode.valueOf(raw) }.getOrDefault(TravelMode.WALK)
         }
 
+    val mapProviderSettingsFlow: Flow<MapProviderSettings> = dataStore.data
+        .map { prefs ->
+            MapProviderSettings(
+                mapProvider = resolveMapProvider(prefs[Keys.MAP_PROVIDER]),
+                amapAndroidKey = prefs[Keys.AMAP_ANDROID_KEY].orEmpty(),
+                amapWebKey = prefs[Keys.AMAP_WEB_KEY].orEmpty(),
+            )
+        }
+
     suspend fun setCalibrationMode(mode: CoordinateCalibrationMode) {
-        context.mapPrefsDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[Keys.CALIBRATION_MODE] = mode.name
         }
     }
 
     suspend fun saveTarget(target: TargetLocation) {
-        context.mapPrefsDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[Keys.TARGET_NAME] = target.name
             prefs[Keys.TARGET_LAT] = target.latitude
             prefs[Keys.TARGET_LNG] = target.longitude
@@ -65,7 +80,7 @@ class MapPreferencesStore(
     }
 
     suspend fun getTargetOrNull(): TargetLocation? {
-        val prefs = context.mapPrefsDataStore.data.first()
+        val prefs = dataStore.data.first()
         val lat = prefs[Keys.TARGET_LAT] ?: return null
         val lng = prefs[Keys.TARGET_LNG] ?: return null
         val name = prefs[Keys.TARGET_NAME] ?: "Custom Target"
@@ -73,7 +88,7 @@ class MapPreferencesStore(
     }
 
     suspend fun saveCamera(camera: MapCameraSnapshot) {
-        context.mapPrefsDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[Keys.CAMERA_LAT] = camera.lat
             prefs[Keys.CAMERA_LNG] = camera.lng
             prefs[Keys.CAMERA_ZOOM] = camera.zoom
@@ -81,7 +96,7 @@ class MapPreferencesStore(
     }
 
     suspend fun getCameraOrNull(): MapCameraSnapshot? {
-        val prefs = context.mapPrefsDataStore.data.first()
+        val prefs = dataStore.data.first()
         val lat = prefs[Keys.CAMERA_LAT] ?: return null
         val lng = prefs[Keys.CAMERA_LNG] ?: return null
         val zoom = prefs[Keys.CAMERA_ZOOM] ?: 15f
@@ -93,7 +108,7 @@ class MapPreferencesStore(
     }
 
     suspend fun setMovementMode(mode: MovementMode) {
-        context.mapPrefsDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[Keys.MOVEMENT_MODE] = mode.name
         }
     }
@@ -103,7 +118,7 @@ class MapPreferencesStore(
     }
 
     suspend fun setMovementTab(tab: MovementPageTab) {
-        context.mapPrefsDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[Keys.MOVEMENT_TAB] = tab.name
         }
     }
@@ -113,7 +128,7 @@ class MapPreferencesStore(
     }
 
     suspend fun setDefaultTravelMode(mode: TravelMode) {
-        context.mapPrefsDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[Keys.DEFAULT_TRAVEL_MODE] = mode.name
         }
     }
@@ -123,19 +138,19 @@ class MapPreferencesStore(
     }
 
     suspend fun setDefaultSnapToRoad(enabled: Boolean) {
-        context.mapPrefsDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[Keys.DEFAULT_SNAP_TO_ROAD] = enabled
         }
     }
 
     suspend fun getDefaultSnapToRoad(): Boolean {
-        val prefs = context.mapPrefsDataStore.data.first()
+        val prefs = dataStore.data.first()
         return prefs[Keys.DEFAULT_SNAP_TO_ROAD] ?: true
     }
 
     suspend fun saveRandomWalkConfig(config: RandomWalkConfig) {
         val normalized = config.normalized()
-        context.mapPrefsDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[Keys.RANDOM_WALK_RADIUS_METERS] = normalized.radiusMeters
             prefs[Keys.RANDOM_WALK_MIN_SPEED_MPS] = normalized.minSpeedMps
             prefs[Keys.RANDOM_WALK_MAX_SPEED_MPS] = normalized.maxSpeedMps
@@ -144,13 +159,47 @@ class MapPreferencesStore(
     }
 
     suspend fun getRandomWalkConfig(): RandomWalkConfig {
-        val prefs = context.mapPrefsDataStore.data.first()
+        val prefs = dataStore.data.first()
         return RandomWalkConfig(
             radiusMeters = prefs[Keys.RANDOM_WALK_RADIUS_METERS] ?: 300.0,
             minSpeedMps = prefs[Keys.RANDOM_WALK_MIN_SPEED_MPS] ?: 0.8,
             maxSpeedMps = prefs[Keys.RANDOM_WALK_MAX_SPEED_MPS] ?: 1.6,
             stepIntervalMs = prefs[Keys.RANDOM_WALK_STEP_INTERVAL_MS] ?: 800L,
         ).normalized()
+    }
+
+    suspend fun setMapProvider(provider: MapProvider) {
+        dataStore.edit { prefs ->
+            prefs[Keys.MAP_PROVIDER] = provider.name
+        }
+    }
+
+    suspend fun getMapProvider(): MapProvider {
+        return mapProviderSettingsFlow.first().mapProvider
+    }
+
+    suspend fun setAmapAndroidKey(key: String) {
+        dataStore.edit { prefs ->
+            prefs[Keys.AMAP_ANDROID_KEY] = key.trim()
+        }
+    }
+
+    suspend fun getAmapAndroidKey(): String {
+        return mapProviderSettingsFlow.first().amapAndroidKey
+    }
+
+    suspend fun setAmapWebKey(key: String) {
+        dataStore.edit { prefs ->
+            prefs[Keys.AMAP_WEB_KEY] = key.trim()
+        }
+    }
+
+    suspend fun getAmapWebKey(): String {
+        return mapProviderSettingsFlow.first().amapWebKey
+    }
+
+    suspend fun getMapProviderSettings(): MapProviderSettings {
+        return mapProviderSettingsFlow.first()
     }
 
     private object Keys {
@@ -165,6 +214,9 @@ class MapPreferencesStore(
         val MOVEMENT_TAB: Preferences.Key<String> = stringPreferencesKey("movement_tab")
         val DEFAULT_TRAVEL_MODE: Preferences.Key<String> = stringPreferencesKey("default_travel_mode")
         val DEFAULT_SNAP_TO_ROAD: Preferences.Key<Boolean> = booleanPreferencesKey("default_snap_to_road")
+        val MAP_PROVIDER: Preferences.Key<String> = stringPreferencesKey("map_provider")
+        val AMAP_ANDROID_KEY: Preferences.Key<String> = stringPreferencesKey("amap_android_key")
+        val AMAP_WEB_KEY: Preferences.Key<String> = stringPreferencesKey("amap_web_key")
         val RANDOM_WALK_RADIUS_METERS: Preferences.Key<Double> =
             doublePreferencesKey("random_walk_radius_meters")
         val RANDOM_WALK_MIN_SPEED_MPS: Preferences.Key<Double> =
