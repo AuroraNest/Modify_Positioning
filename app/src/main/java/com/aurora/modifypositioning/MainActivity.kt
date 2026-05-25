@@ -212,7 +212,7 @@ class MainActivity : ComponentActivity() {
 
             fun pauseMock() {
                 startService(MockLocationService.pauseIntent(this@MainActivity))
-                Toast.makeText(this@MainActivity, "已暂停定位修改", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "已暂停移动, 保持当前位置", Toast.LENGTH_SHORT).show()
             }
 
             fun stopMock() {

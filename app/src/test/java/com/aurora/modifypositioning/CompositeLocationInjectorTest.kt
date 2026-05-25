@@ -1,8 +1,8 @@
 package com.aurora.modifypositioning
 
-import android.location.Location
 import com.aurora.modifypositioning.location.CompositeLocationInjector
 import com.aurora.modifypositioning.location.FusedLocationInjectorCore
+import com.aurora.modifypositioning.location.FusedMockLocation
 import com.aurora.modifypositioning.location.FusedMockLocationClient
 import com.aurora.modifypositioning.location.LocationInjector
 import com.aurora.modifypositioning.model.TargetLocation
@@ -48,6 +48,80 @@ class CompositeLocationInjectorTest {
         assertEquals(listOf(false, false), client.mockModeCalls)
     }
 
+    @Test
+    fun fusedStart_waitsForTaskSuccessBeforePublishingSuccess() {
+        val client = RecordingFusedClient()
+        val injector = FusedLocationInjectorCore(
+            client = client,
+            updateIntervalMs = 60_000L,
+            onError = {},
+            elapsedRealtimeNanosProvider = { 0L },
+        )
+
+        injector.start(TARGET)
+        assertEquals(listOf(true), client.mockModeCalls)
+        assertTrue(com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore.state.value.mockModePending)
+        assertEquals(false, com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore.state.value.mockModeEnabled)
+        assertTrue(client.locations.isEmpty())
+
+        client.completeMockModeSuccess()
+        assertEquals(true, com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore.state.value.mockModeEnabled)
+        assertTrue(com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore.state.value.lastInjectionPending)
+        assertEquals(null, com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore.state.value.lastInjectionTimeMillis)
+
+        client.completeLocationSuccess()
+        val diagnostics = com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore.state.value
+        assertEquals(false, diagnostics.lastInjectionPending)
+        assertTrue(diagnostics.lastInjectionTimeMillis != null)
+        assertTrue(diagnostics.lastSuccessfulLatitude != null)
+        assertTrue(diagnostics.lastSuccessfulLongitude != null)
+    }
+
+    @Test
+    fun fusedStart_failureDoesNotPublishMockModeOrInjectionSuccess() {
+        val client = RecordingFusedClient()
+        val errors = mutableListOf<String>()
+        val injector = FusedLocationInjectorCore(
+            client = client,
+            updateIntervalMs = 60_000L,
+            onError = { errors += it },
+            elapsedRealtimeNanosProvider = { 0L },
+        )
+
+        injector.start(TARGET)
+        client.completeMockModeFailure(IllegalStateException("denied"))
+
+        val diagnostics = com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore.state.value
+        assertEquals(false, diagnostics.mockModePending)
+        assertEquals(false, diagnostics.mockModeEnabled)
+        assertEquals(null, diagnostics.lastInjectionTimeMillis)
+        assertTrue(client.locations.isEmpty())
+        assertTrue(errors.any { it.contains("denied") })
+    }
+
+    @Test
+    fun fusedInjection_failureKeepsPreviousSuccessDataUnset() {
+        val client = RecordingFusedClient()
+        val errors = mutableListOf<String>()
+        val injector = FusedLocationInjectorCore(
+            client = client,
+            updateIntervalMs = 60_000L,
+            onError = { errors += it },
+            elapsedRealtimeNanosProvider = { 0L },
+        )
+
+        injector.start(TARGET)
+        client.completeMockModeSuccess()
+        client.completeLocationFailure(IllegalStateException("location denied"))
+
+        val diagnostics = com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore.state.value
+        assertEquals(false, diagnostics.lastInjectionPending)
+        assertEquals(null, diagnostics.lastInjectionTimeMillis)
+        assertEquals(null, diagnostics.lastSuccessfulLatitude)
+        assertTrue(diagnostics.lastError?.contains("location denied") == true)
+        assertTrue(errors.any { it.contains("location denied") })
+    }
+
     private class RecordingInjector(
         private val failOnStart: Boolean = false,
     ) : LocationInjector {
@@ -79,14 +153,46 @@ class CompositeLocationInjectorTest {
 
     private class RecordingFusedClient : FusedMockLocationClient {
         val mockModeCalls = mutableListOf<Boolean>()
-        val locations = mutableListOf<Location>()
+        val locations = mutableListOf<FusedMockLocation>()
+        private val mockModeSuccessCallbacks = ArrayDeque<() -> Unit>()
+        private val mockModeFailureCallbacks = ArrayDeque<(Throwable) -> Unit>()
+        private val locationSuccessCallbacks = ArrayDeque<() -> Unit>()
+        private val locationFailureCallbacks = ArrayDeque<(Throwable) -> Unit>()
 
-        override fun setMockMode(enabled: Boolean, onFailure: (Throwable) -> Unit) {
+        override fun setMockMode(
+            enabled: Boolean,
+            onSuccess: () -> Unit,
+            onFailure: (Throwable) -> Unit,
+        ) {
             mockModeCalls += enabled
+            mockModeSuccessCallbacks += onSuccess
+            mockModeFailureCallbacks += onFailure
         }
 
-        override fun setMockLocation(location: Location, onFailure: (Throwable) -> Unit) {
+        override fun setMockLocation(
+            location: FusedMockLocation,
+            onSuccess: () -> Unit,
+            onFailure: (Throwable) -> Unit,
+        ) {
             locations += location
+            locationSuccessCallbacks += onSuccess
+            locationFailureCallbacks += onFailure
+        }
+
+        fun completeMockModeSuccess() {
+            mockModeSuccessCallbacks.removeFirst().invoke()
+        }
+
+        fun completeMockModeFailure(error: Throwable) {
+            mockModeFailureCallbacks.removeFirst().invoke(error)
+        }
+
+        fun completeLocationSuccess() {
+            locationSuccessCallbacks.removeFirst().invoke()
+        }
+
+        fun completeLocationFailure(error: Throwable) {
+            locationFailureCallbacks.removeFirst().invoke(error)
         }
     }
 

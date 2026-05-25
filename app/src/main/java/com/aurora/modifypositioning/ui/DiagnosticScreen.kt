@@ -1,5 +1,7 @@
 package com.aurora.modifypositioning.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,15 +16,21 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.aurora.modifypositioning.model.DiagnosticLocation
 import com.aurora.modifypositioning.model.DiagnosticSnapshot
+import com.aurora.modifypositioning.model.DiagnosticVerdictStatus
 import com.aurora.modifypositioning.model.MockState
 import com.aurora.modifypositioning.model.MovementMode
 import com.aurora.modifypositioning.model.MovementState
 import com.aurora.modifypositioning.model.RouteSource
 import com.aurora.modifypositioning.model.TravelMode
+import com.aurora.modifypositioning.model.realLocationOverwriteSummary
+import com.aurora.modifypositioning.model.thirdPartyValidationChecklists
+import com.aurora.modifypositioning.model.toCopyableDiagnosticReport
+import com.aurora.modifypositioning.model.toDiagnosticVerdict
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -33,6 +41,10 @@ fun DiagnosticScreen(
     onRefresh: () -> Unit,
     onBack: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val verdict = snapshot.toDiagnosticVerdict()
+    val report = snapshot.toCopyableDiagnosticReport()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -45,6 +57,19 @@ fun DiagnosticScreen(
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
         )
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("诊断结论: ${verdictStatusLabel(verdict.status)}")
+                Text(verdict.title, style = MaterialTheme.typography.titleMedium)
+                DiagnosticList("阻断项", verdict.blockers)
+                DiagnosticList("可能原因", verdict.possibleCauses)
+                DiagnosticList("下一步", verdict.nextSteps)
+            }
+        }
 
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
@@ -122,7 +147,12 @@ fun DiagnosticScreen(
                 Text("Fused 定位状态")
                 Text("可用: ${if (snapshot.fusedAvailable) "true" else "false"}")
                 Text("mock mode: ${if (snapshot.fusedMockModeEnabled) "true" else "false"}")
+                Text("mock mode pending: ${if (snapshot.fusedMockModePending) "true" else "false"}")
+                Text("注入 pending: ${if (snapshot.fusedLastInjectionPending) "true" else "false"}")
                 Text("最近注入: ${formatTimeOrDash(snapshot.fusedLastInjectionTimeMillis)}")
+                Text(
+                    "最近成功坐标: ${formatCoordinate(snapshot.fusedLastSuccessfulLatitude, snapshot.fusedLastSuccessfulLongitude)}",
+                )
                 Text("最近错误: ${snapshot.fusedLastError ?: "-"}")
             }
         }
@@ -135,9 +165,36 @@ fun DiagnosticScreen(
                 Text("判断建议")
                 Text("1) 多数使用系统定位或 fused 定位的 app 可生效; 显式检测 mock 或服务端校验的 app 可能无效")
                 Text("2) 若本页注入坐标和最近位置都不变, 优先检查模拟位置信息应用是否仍为本 App")
-                Text("3) ${realLocationOverwriteHint(snapshot)}")
+                Text("3) ${snapshot.realLocationOverwriteSummary()}")
                 Text("4) 若服务状态异常, 请先停止再开始, 并保持应用后台不被清理")
             }
+        }
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("第三方 app 验证清单")
+                thirdPartyValidationChecklists().forEach { checklist ->
+                    Text(checklist.appName, fontWeight = FontWeight.SemiBold)
+                    checklist.steps.forEachIndexed { index, step ->
+                        Text("${index + 1}) $step")
+                    }
+                }
+            }
+        }
+
+        Button(
+            onClick = {
+                val clipboard = context.getSystemService(ClipboardManager::class.java)
+                clipboard?.setPrimaryClip(
+                    ClipData.newPlainText("Modify Positioning 诊断报告", report),
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("复制诊断")
         }
 
         Button(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) {
@@ -147,6 +204,18 @@ fun DiagnosticScreen(
         TextButton(onClick = onBack) {
             Text("返回控制台")
         }
+    }
+}
+
+@Composable
+private fun DiagnosticList(title: String, items: List<String>) {
+    if (items.isEmpty()) {
+        Text("$title: 无")
+        return
+    }
+    Text("$title:")
+    items.forEach { item ->
+        Text("- $item")
     }
 }
 
@@ -256,19 +325,14 @@ private fun formatTimeOrDash(timeMillis: Long?): String {
     }
 }
 
-private fun realLocationOverwriteHint(snapshot: DiagnosticSnapshot): String {
-    val recovery = snapshot.lastInjection?.recoveryStatus
-    if (!recovery.isNullOrBlank()) {
-        return "检测到可能被真实定位覆盖: $recovery"
+private fun formatCoordinate(lat: Double?, lng: Double?): String {
+    return if (lat == null || lng == null) "-" else "$lat, $lng"
+}
+
+private fun verdictStatusLabel(status: DiagnosticVerdictStatus): String {
+    return when (status) {
+        DiagnosticVerdictStatus.Ok -> "正常"
+        DiagnosticVerdictStatus.Warning -> "需确认"
+        DiagnosticVerdictStatus.Blocked -> "阻断"
     }
-    val locations = listOfNotNull(snapshot.gpsLastKnown, snapshot.networkLastKnown)
-    val nonMock = locations.firstOrNull { !it.isMock }
-    if (nonMock != null) {
-        return "检测到 ${nonMock.provider} 最近位置 mock=false, 可能被真实定位覆盖"
-    }
-    val far = locations.firstOrNull { (it.distanceToLastInjectionMeters ?: 0.0) > 75.0 }
-    if (far != null) {
-        return "检测到 ${far.provider} 距注入目标较远, 可能被真实定位覆盖"
-    }
-    return "若目标 app 仍显示真实位置, 可能是其读取了其他定位源或服务端校验"
 }

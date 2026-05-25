@@ -7,7 +7,11 @@ import kotlinx.coroutines.flow.asStateFlow
 data class FusedLocationDiagnostics(
     val available: Boolean = false,
     val mockModeEnabled: Boolean = false,
+    val mockModePending: Boolean = false,
+    val lastInjectionPending: Boolean = false,
     val lastInjectionTimeMillis: Long? = null,
+    val lastSuccessfulLatitude: Double? = null,
+    val lastSuccessfulLongitude: Double? = null,
     val lastError: String? = null,
 )
 

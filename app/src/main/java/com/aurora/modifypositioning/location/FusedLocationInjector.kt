@@ -43,6 +43,7 @@ internal class FusedLocationInjectorCore(
     private val client: FusedMockLocationClient?,
     private val updateIntervalMs: Long,
     private val onError: (String) -> Unit,
+    private val elapsedRealtimeNanosProvider: () -> Long = { SystemClock.elapsedRealtimeNanos() },
 ) : LocationInjector {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -50,9 +51,15 @@ internal class FusedLocationInjectorCore(
     @Volatile
     private var currentTarget: TargetLocation? = null
     private var mockModeEnabled = false
+    private var mockModePending = false
+    private var desiredMockMode = false
     private var tick = 0L
     private var burstRemain = 0
     private var lastInjectionTimeMillis: Long? = null
+    private var lastInjectionPending = false
+    private var lastInjectionRequestId = 0L
+    private var lastSuccessfulLatitude: Double? = null
+    private var lastSuccessfulLongitude: Double? = null
     private var lastError: String? = null
 
     init {
@@ -66,8 +73,6 @@ internal class FusedLocationInjectorCore(
         }
         setMockMode(true)
         burstRemain = max(burstRemain, ENHANCED_STARTUP_BURST_COUNT)
-        startLoop()
-        inject(target)
     }
 
     override fun updateTarget(target: TargetLocation) {
@@ -89,6 +94,7 @@ internal class FusedLocationInjectorCore(
     override fun stop() {
         pause()
         currentTarget = null
+        lastInjectionPending = false
         setMockMode(false)
         tick = 0L
         burstRemain = 0
@@ -103,13 +109,13 @@ internal class FusedLocationInjectorCore(
         updateJob?.cancel()
         updateJob = scope.launch {
             while (isActive) {
+                delay(nextDelay())
                 val target = currentTarget
                 if (target == null) {
                     publishError("fused 缺少目标位置")
                     break
                 }
                 inject(target)
-                delay(nextDelay())
             }
         }
     }
@@ -124,17 +130,39 @@ internal class FusedLocationInjectorCore(
     }
 
     private fun setMockMode(enabled: Boolean) {
+        desiredMockMode = enabled
         val fusedClient = client ?: run {
             publishStatus()
             return
         }
         runCatching {
-            fusedClient.setMockMode(enabled) { error ->
-                publishError("fused mock mode ${if (enabled) "开启" else "关闭"}失败: ${error.message ?: "未知错误"}")
-            }
-            mockModeEnabled = enabled
+            mockModePending = true
             publishStatus()
+            fusedClient.setMockMode(
+                enabled = enabled,
+                onSuccess = mockModeSuccess@{
+                    if (desiredMockMode != enabled) {
+                        return@mockModeSuccess
+                    }
+                    mockModePending = false
+                    mockModeEnabled = enabled
+                    lastError = null
+                    publishStatus()
+                    if (enabled) {
+                        startLoop()
+                        currentTarget?.let { inject(it) }
+                    }
+                },
+                onFailure = mockModeFailure@{ error ->
+                    if (desiredMockMode != enabled) {
+                        return@mockModeFailure
+                    }
+                    mockModePending = false
+                    publishError("fused mock mode ${if (enabled) "开启" else "关闭"}失败: ${error.message ?: "未知错误"}")
+                },
+            )
         }.onFailure { error ->
+            mockModePending = false
             publishError("fused mock mode ${if (enabled) "开启" else "关闭"}失败: ${error.message ?: "未知错误"}")
         }
     }
@@ -149,30 +177,48 @@ internal class FusedLocationInjectorCore(
         val now = System.currentTimeMillis()
         val point = jitterPoint(target, tick)
         tick += 1
-        val location = Location(LocationManager.GPS_PROVIDER).apply {
-            latitude = point.first
-            longitude = point.second
-            accuracy = 4f + ((tick % 3).toFloat())
-            time = now
-            elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
-            altitude = 0.0
-            speed = 0.2f + ((tick % 5).toFloat() * 0.12f)
-            bearing = ((tick * 17L) % 360L).toFloat()
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                verticalAccuracyMeters = 8f
-                speedAccuracyMetersPerSecond = 0.4f
-                bearingAccuracyDegrees = 8f
-            }
-        }
+        val accuracy = 4f + ((tick % 3).toFloat())
+        val speed = 0.2f + ((tick % 5).toFloat() * 0.12f)
+        val bearing = ((tick * 17L) % 360L).toFloat()
+        val location = FusedMockLocation(
+            provider = LocationManager.GPS_PROVIDER,
+            latitude = point.first,
+            longitude = point.second,
+            accuracyMeters = accuracy,
+            timeMillis = now,
+            elapsedRealtimeNanos = elapsedRealtimeNanosProvider(),
+            altitude = 0.0,
+            speedMps = speed,
+            bearingDegrees = bearing,
+        )
 
         runCatching {
-            fusedClient.setMockLocation(location) { error ->
-                publishError("fused 注入失败: ${error.message ?: "未知错误"}")
-            }
-            lastInjectionTimeMillis = now
-            lastError = null
+            val requestId = ++lastInjectionRequestId
+            lastInjectionPending = true
             publishStatus()
+            fusedClient.setMockLocation(
+                location = location,
+                onSuccess = locationSuccess@{
+                    if (requestId != lastInjectionRequestId) {
+                        return@locationSuccess
+                    }
+                    lastInjectionPending = false
+                    lastInjectionTimeMillis = now
+                    lastSuccessfulLatitude = point.first
+                    lastSuccessfulLongitude = point.second
+                    lastError = null
+                    publishStatus()
+                },
+                onFailure = locationFailure@{ error ->
+                    if (requestId != lastInjectionRequestId) {
+                        return@locationFailure
+                    }
+                    lastInjectionPending = false
+                    publishError("fused 注入失败: ${error.message ?: "未知错误"}")
+                },
+            )
         }.onFailure { error ->
+            lastInjectionPending = false
             publishError("fused 注入失败: ${error.message ?: "未知错误"}")
         }
     }
@@ -199,7 +245,11 @@ internal class FusedLocationInjectorCore(
             FusedLocationDiagnostics(
                 available = client != null,
                 mockModeEnabled = mockModeEnabled,
+                mockModePending = mockModePending,
+                lastInjectionPending = lastInjectionPending,
                 lastInjectionTimeMillis = lastInjectionTimeMillis,
+                lastSuccessfulLatitude = lastSuccessfulLatitude,
+                lastSuccessfulLongitude = lastSuccessfulLongitude,
                 lastError = lastError,
             ),
         )
@@ -207,18 +257,69 @@ internal class FusedLocationInjectorCore(
 }
 
 interface FusedMockLocationClient {
-    fun setMockMode(enabled: Boolean, onFailure: (Throwable) -> Unit)
-    fun setMockLocation(location: Location, onFailure: (Throwable) -> Unit)
+    fun setMockMode(
+        enabled: Boolean,
+        onSuccess: () -> Unit,
+        onFailure: (Throwable) -> Unit,
+    )
+
+    fun setMockLocation(
+        location: FusedMockLocation,
+        onSuccess: () -> Unit,
+        onFailure: (Throwable) -> Unit,
+    )
 }
+
+data class FusedMockLocation(
+    val provider: String,
+    val latitude: Double,
+    val longitude: Double,
+    val accuracyMeters: Float,
+    val timeMillis: Long,
+    val elapsedRealtimeNanos: Long,
+    val altitude: Double,
+    val speedMps: Float,
+    val bearingDegrees: Float,
+)
 
 private class GoogleFusedMockLocationClient(context: Context) : FusedMockLocationClient {
     private val client = LocationServices.getFusedLocationProviderClient(context)
 
-    override fun setMockMode(enabled: Boolean, onFailure: (Throwable) -> Unit) {
-        client.setMockMode(enabled).addOnFailureListener(onFailure)
+    override fun setMockMode(
+        enabled: Boolean,
+        onSuccess: () -> Unit,
+        onFailure: (Throwable) -> Unit,
+    ) {
+        client.setMockMode(enabled)
+            .addOnSuccessListener { onSuccess() }
+            .addOnFailureListener(onFailure)
     }
 
-    override fun setMockLocation(location: Location, onFailure: (Throwable) -> Unit) {
-        client.setMockLocation(location).addOnFailureListener(onFailure)
+    override fun setMockLocation(
+        location: FusedMockLocation,
+        onSuccess: () -> Unit,
+        onFailure: (Throwable) -> Unit,
+    ) {
+        client.setMockLocation(location.toAndroidLocation())
+            .addOnSuccessListener { onSuccess() }
+            .addOnFailureListener(onFailure)
+    }
+}
+
+private fun FusedMockLocation.toAndroidLocation(): Location {
+    return Location(provider).apply {
+        this.latitude = this@toAndroidLocation.latitude
+        this.longitude = this@toAndroidLocation.longitude
+        accuracy = accuracyMeters
+        time = timeMillis
+        elapsedRealtimeNanos = this@toAndroidLocation.elapsedRealtimeNanos
+        altitude = this@toAndroidLocation.altitude
+        speed = speedMps
+        bearing = bearingDegrees
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            verticalAccuracyMeters = 8f
+            speedAccuracyMetersPerSecond = 0.4f
+            bearingAccuracyDegrees = 8f
+        }
     }
 }

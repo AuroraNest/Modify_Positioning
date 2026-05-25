@@ -123,68 +123,75 @@ class MockLocationService : Service() {
 
         val missingPermissions = MockEnvironmentChecker.missingPermissions(this)
         if (missingPermissions.isNotEmpty()) {
-            controller.onError("缺少权限: ${missingPermissions.joinToString()}")
-            refreshNotification()
+            failStartup(
+                message = "缺少权限: ${missingPermissions.joinToString()}",
+                cleanupStartedComponents = true,
+                stopService = true,
+            )
             return
         }
 
         if (!MockEnvironmentChecker.isMockLocationAppSelected(this)) {
-            controller.onError("请在开发者选项中将本应用设为模拟位置信息应用")
-            refreshNotification()
+            failStartup(
+                message = "请在开发者选项中将本应用设为模拟位置信息应用",
+                cleanupStartedComponents = true,
+                stopService = true,
+            )
             return
         }
 
         val selectedTarget = runBlocking { mapPreferencesStore.getTargetOrNull() } ?: DEFAULT_TARGET
         val calibrationMode = runBlocking { mapPreferencesStore.getCalibrationMode() }
         val movementMode = runBlocking { mapPreferencesStore.getMovementMode() }
-        val resumingRandomWalk = movementMode == MovementMode.RANDOM_WALK &&
-            controller.movementState.value == MovementState.Paused &&
-            controller.movementTrace.value.isNotEmpty()
-        val routeMode = movementMode == MovementMode.POINT_TO_POINT_NAV ||
-            movementMode == MovementMode.CUSTOM_ROUTE
-        val resumingRoute = routeMode &&
-            controller.movementState.value == MovementState.Paused &&
-            controller.routeProgress.value != null &&
-            controller.plannedRoute.value != null
+        val startupPlanResult = buildMovementStartupPlan(
+            movementMode = movementMode,
+            movementState = controller.movementState.value,
+            movementTrace = controller.movementTrace.value,
+            movementCenter = controller.movementCenter.value,
+            currentTarget = controller.target.value,
+            selectedTarget = selectedTarget,
+            plannedRoute = controller.plannedRoute.value,
+            routeProgress = controller.routeProgress.value,
+        )
+        val startupPlan = when (startupPlanResult) {
+            is MovementStartupPlanResult.Ready -> startupPlanResult.plan
+            is MovementStartupPlanResult.Failure -> {
+                failStartup(
+                    message = startupPlanResult.message,
+                    cleanupStartedComponents = true,
+                    stopService = true,
+                )
+                return
+            }
+        }
 
         stopRandomWalkLoop()
         stopRouteMovementLoop()
 
-        val movementCenterTarget = if (resumingRandomWalk) {
-            controller.movementCenter.value
-        } else {
-            selectedTarget
-        }
-        val movementStartTarget = if (resumingRandomWalk || resumingRoute) {
-            controller.target.value
-        } else {
-            selectedTarget
-        }
-
-        val initialInjectTarget = buildInjectTarget(movementStartTarget, calibrationMode)
+        val initialInjectTarget = buildInjectTarget(startupPlan.movementStartTarget, calibrationMode)
         injector.start(initialInjectTarget)
-        controller.onServiceStarted(movementStartTarget)
+        controller.onServiceStarted(startupPlan.movementStartTarget)
         acquireWakeLock()
 
-        when (movementMode) {
+        when (startupPlan.movementMode) {
             MovementMode.RANDOM_WALK -> {
                 val config = runBlocking { mapPreferencesStore.getRandomWalkConfig() }
                 controller.onMovementModeChanged(MovementMode.RANDOM_WALK)
-                if (resumingRandomWalk) {
+                if (startupPlan.resumingRandomWalk) {
                     controller.onMovementResumed()
                 } else {
                     controller.onMovementStarted(
-                        centerTarget = movementCenterTarget,
+                        centerTarget = startupPlan.movementCenterTarget,
                         startPoint = MovementPoint(
-                            lat = movementStartTarget.latitude,
-                            lng = movementStartTarget.longitude,
+                            lat = startupPlan.movementStartTarget.latitude,
+                            lng = startupPlan.movementStartTarget.longitude,
                             timestampMs = System.currentTimeMillis(),
                         ),
                     )
                 }
                 startRandomWalkLoop(
-                    centerTarget = movementCenterTarget,
-                    currentTarget = movementStartTarget,
+                    centerTarget = startupPlan.movementCenterTarget,
+                    currentTarget = startupPlan.movementStartTarget,
                     calibrationMode = calibrationMode,
                     config = config,
                 )
@@ -192,14 +199,16 @@ class MockLocationService : Service() {
 
             MovementMode.POINT_TO_POINT_NAV,
             MovementMode.CUSTOM_ROUTE -> {
-                val plannedRoute = controller.plannedRoute.value
-                if (plannedRoute == null || plannedRoute.points.size < 2) {
-                    controller.onError("请先规划并确认路线")
-                    refreshNotification()
+                val plannedRoute = startupPlan.plannedRoute ?: run {
+                    failStartup(
+                        message = "请先规划并确认路线",
+                        cleanupStartedComponents = true,
+                        stopService = true,
+                    )
                     return
                 }
-                controller.onMovementModeChanged(movementMode)
-                if (resumingRoute) {
+                controller.onMovementModeChanged(startupPlan.movementMode)
+                if (startupPlan.resumingRoute) {
                     controller.onMovementResumed()
                 }
                 startRouteMovementLoop(
@@ -215,6 +224,28 @@ class MockLocationService : Service() {
         }
 
         refreshNotification()
+    }
+
+    private fun failStartup(
+        message: String,
+        cleanupStartedComponents: Boolean,
+        stopService: Boolean,
+    ) {
+        if (cleanupStartedComponents) {
+            stopRandomWalkLoop()
+            stopRouteMovementLoop()
+            if (::injector.isInitialized) {
+                injector.stop()
+            }
+            releaseWakeLock()
+            setKeepRunning(false)
+        }
+        controller.onError(message)
+        refreshNotification()
+        if (stopService) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
     }
 
     private fun startRandomWalkLoop(
@@ -517,7 +548,7 @@ class MockLocationService : Service() {
     }
 
     private fun getPausedContentText(): String {
-        return getString(R.string.notification_content_paused)
+        return "已暂停移动, 保持当前位置"
     }
 
     private fun buildNotification(content: String): Notification {

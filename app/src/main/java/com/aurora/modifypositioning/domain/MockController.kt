@@ -78,7 +78,7 @@ class MockController(
 
     fun onServicePaused() {
         _state.value = MockState.Paused
-        _statusText.value = "已暂停模拟"
+        _statusText.value = "已暂停移动, 保持当前位置"
     }
 
     fun onServiceStopped() {
@@ -227,4 +227,3 @@ class MockController(
 object MockControllerStore {
     val instance: MockController by lazy { MockController() }
 }
-
