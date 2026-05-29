@@ -41,11 +41,15 @@ Debug APK:
 
 `app/build/outputs/apk/debug/app-debug.apk`
 
-Release APK:
+`app-debug.apk` 使用 debug 签名, 可直接安装到设备.
+
+未签名 Release 产物:
 
 `app/build/outputs/apk/release/app-release-unsigned.apk`
 
-`assembleRelease` 用于 release 变体打包. 产物是否可分发取决于当前签名配置, 未配置正式签名时不应直接作为正式分发包使用.
+`app-release-unsigned.apk` 只作为未签名 release 构建产物, 不能直接安装, 不再建议用户下载. 从 GitHub Release 安装时, 请下载命名为 `Modify_Positioning-installable-<sha>.apk` 的 installable APK, 或下载明确标注为 debug signed 的 APK 资产.
+
+如果安装时出现 `packageInfo is null` / 解析失败, 先确认是否误下载了 `release-unsigned` 或 `app-release-unsigned.apk`.
 
 高德 Key 是可选配置. 不配置时默认使用 OSM.
 
