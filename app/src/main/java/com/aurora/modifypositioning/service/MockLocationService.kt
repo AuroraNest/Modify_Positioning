@@ -471,7 +471,7 @@ class MockLocationService : Service() {
 
     private fun nextSteadyInjectionDelayMillis(): Long {
         return when (controller.movementMode.value) {
-            MovementMode.FIXED -> 1_500L
+            MovementMode.FIXED -> ENHANCED_UPDATE_INTERVAL_MS
             MovementMode.RANDOM_WALK -> 900L
             MovementMode.POINT_TO_POINT_NAV,
             MovementMode.CUSTOM_ROUTE -> 800L
