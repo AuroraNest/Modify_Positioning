@@ -12,6 +12,7 @@ Modify Positioning 是一个无 Root Android 虚拟定位 App, 使用 Android �
 - 统一模拟层: `LocationSimulationEngine` 生成单一 `LocationSample`, 再同时喂给 GPS, Network 和 Fused 注入层.
 - 多 provider 注入: `AndroidLocationInjector` 写入 GPS / Network test provider, `FusedLocationInjector` 写入 Google Play services Fused mock location.
 - Startup burst: 启动前 2 秒左右快速注入多次 sample, 让遵循标准 API 的定位消费者尽快读到目标位置.
+- 第三方 App 兼容测试: 启动后前 60 秒保持高频注入, 面向微信, 美团, 高德等使用系统定位链路的 App 做兼容测试.
 - Pause 保持当前位置: 暂停只停止移动, 不释放 provider, 继续保持当前位置注入.
 - Stop 完全清理: 停止会关闭注入循环, 清理 test provider, 并关闭 Fused mock mode.
 - 随机步行和路线模拟: 继续保留现有 `RandomWalkEngine` 和 `RouteSimulationEngine`, 由 service 统一生成最终 sample.
@@ -59,12 +60,14 @@ UI / Map selection
 ### 注入链路
 
 - `MockLocationService` 是唯一注入循环 owner.
-- 启动后先执行 12 次 startup burst, 每次间隔 150ms.
-- 固定点 steady loop 默认 1.5s 注入一次.
+- 启动后先执行 30 次 startup burst, 每次间隔 120ms.
+- 第三方 App 兼容窗口前 60 秒默认 300ms 注入一次.
+- 固定点 steady loop 默认 400ms 注入一次.
 - 随机步行 steady loop 默认 900ms 注入一次.
 - 路线模拟 steady loop 默认 800ms 注入一次.
 - `AndroidLocationInjector` 不再生成 jitter, tick, speed 或 bearing.
 - `FusedLocationInjector` 在 mock mode 成功前缓存最新 sample, 成功后立即补注入.
+- Android 侧诊断发现疑似真实定位覆盖时, 会追加短 recovery burst.
 - Fused 失败不会让 GPS/Network 停止, 由 `CompositeLocationInjector` 聚合 partial 状态.
 
 ### 旅行剧本 preset
@@ -178,6 +181,18 @@ AMAP_WEB_API_KEY=your_web_key
 
 这不是绕过高德检测的能力, 而是 Android mock location 与第三方定位缓存/融合策略之间的正常延迟.
 
+### 微信, 美团等 App 兼容测试
+
+当前实现会尽量让遵循 Android 标准 `LocationManager` / `FusedLocationProviderClient` 的 App 读取到虚拟地点. 对微信, 美团, 高德等 App, 建议使用这个测试流程:
+
+1. 先在系统开发者选项中确认 Modify Positioning 是 mock location app.
+2. 在 Modify Positioning 里选择目标地点并开始虚拟定位.
+3. 等待 10-30 秒, 让第三方 App 兼容窗口持续推送 GPS / Network / Fused sample.
+4. 强制停止并重新打开微信, 美团或高德, 再触发定位.
+5. 如果诊断页显示系统定位已接近目标, 但目标 App 仍回真实位置, 通常是目标 App 自身 cache, server validation, Wi-Fi/IP/基站辅助判断或 anti-mock 策略导致.
+
+这表示本 App 支持微信, 美团等 App 的标准定位链路兼容测试, 不表示保证绕过它们的 mock 检测或风控.
+
 ## 现实边界
 
 本 App 使用 Android 官方 mock location 能力. 当目标 App 使用 `LocationManager` 或 `FusedLocationProviderClient` 获取位置时, 通常可以读取到模拟位置. 如果目标 App 使用 anti-mock 检测, 位置缓存, 服务端校验, 账号风控, IP, Wi-Fi, 蓝牙, 基站或传感器辅助判断, 可能仍显示真实位置或拒绝使用模拟位置.
@@ -240,6 +255,7 @@ Keywords: Android mock location, fake GPS, virtual location, location simulator,
 - Unified simulation layer: `LocationSimulationEngine` generates one `LocationSample` shared by GPS, Network and Fused injection.
 - Multi-provider injection: `AndroidLocationInjector` writes GPS / Network test providers, while `FusedLocationInjector` writes Google Play services Fused mock location.
 - Startup burst: the service injects several samples quickly after startup so standard location consumers can pick up the target faster.
+- Third-party app compatibility testing: the first 60 seconds use higher frequency injection for apps such as WeChat, Meituan and Amap when they consume standard Android location APIs.
 - Pause keeps location: pause stops movement but continues injecting the current point.
 - Stop cleans up: stop ends the injection loop, removes test providers and disables Fused mock mode.
 - Random walk and route simulation are still supported through the existing domain engines.
@@ -288,6 +304,18 @@ Recommended flow:
 4. If it keeps returning to the real location, check mock app selection, permissions, battery restrictions and Amap cache.
 
 This is not an anti-detection bypass. It is normal latency between Android mock location and third-party app cache/fusion logic.
+
+## WeChat, Meituan And Other App Compatibility Testing
+
+Modify Positioning tries to make apps that consume standard Android `LocationManager` / `FusedLocationProviderClient` data read the virtual point. For WeChat, Meituan, Amap and similar apps, use this flow:
+
+1. Make sure Modify Positioning is selected as the mock location app in Developer Options.
+2. Select a target place and start virtual location.
+3. Wait 10-30 seconds so the compatibility warm-up window can keep pushing GPS / Network / Fused samples.
+4. Force stop and reopen WeChat, Meituan or Amap, then trigger location again.
+5. If diagnostics show the system location is near the target but the target app still returns to the real place, the cause is usually app cache, server validation, Wi-Fi/IP/cell-tower fusion or anti-mock logic.
+
+This means the project supports compatibility testing for WeChat, Meituan and similar apps through the standard Android location path. It does not guarantee bypassing their mock detection or risk controls.
 
 ## Build
 

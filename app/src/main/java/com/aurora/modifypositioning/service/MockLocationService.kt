@@ -39,6 +39,9 @@ import com.aurora.modifypositioning.model.PlannedRoute
 import com.aurora.modifypositioning.model.RouteProgress
 import com.aurora.modifypositioning.model.RandomWalkConfig
 import com.aurora.modifypositioning.model.TargetLocation
+import com.aurora.modifypositioning.model.THIRD_PARTY_COMPATIBILITY_INTERVAL_MS
+import com.aurora.modifypositioning.model.THIRD_PARTY_COMPATIBILITY_WARMUP_MS
+import com.aurora.modifypositioning.model.THIRD_PARTY_RECOVERY_BURST_COUNT
 import com.aurora.modifypositioning.model.TravelMode
 import com.aurora.modifypositioning.simulation.EnvironmentProfile
 import com.aurora.modifypositioning.simulation.LocationSimulationEngine
@@ -67,6 +70,8 @@ class MockLocationService : Service() {
     private var routeMovementJob: Job? = null
     private var injectionLoopJob: Job? = null
     private var simulationEngine: LocationSimulationEngine? = null
+    private var thirdPartyCompatibilityUntilMillis = 0L
+    private var recoveryBurstRemain = 0
     private var explicitStop = false
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -85,7 +90,7 @@ class MockLocationService : Service() {
                     updateIntervalMs = ENHANCED_UPDATE_INTERVAL_MS,
                     onError = onInjectionError,
                     onInjected = { report ->
-                        controller.onInjected(report)
+                        handleInjectionReport(report)
                     },
                 ),
                 FusedLocationInjector(
@@ -185,6 +190,8 @@ class MockLocationService : Service() {
         injector.start(initialInjectTarget)
         controller.onServiceStarted(startupPlan.movementStartTarget)
         acquireWakeLock()
+        thirdPartyCompatibilityUntilMillis = System.currentTimeMillis() + THIRD_PARTY_COMPATIBILITY_WARMUP_MS
+        recoveryBurstRemain = 0
         startInjectionLoop()
 
         when (startupPlan.movementMode) {
@@ -470,6 +477,13 @@ class MockLocationService : Service() {
     }
 
     private fun nextSteadyInjectionDelayMillis(): Long {
+        if (recoveryBurstRemain > 0) {
+            recoveryBurstRemain -= 1
+            return ENHANCED_STARTUP_BURST_INTERVAL_MS
+        }
+        if (System.currentTimeMillis() < thirdPartyCompatibilityUntilMillis) {
+            return THIRD_PARTY_COMPATIBILITY_INTERVAL_MS
+        }
         return when (controller.movementMode.value) {
             MovementMode.FIXED -> ENHANCED_UPDATE_INTERVAL_MS
             MovementMode.RANDOM_WALK -> 900L
@@ -482,6 +496,15 @@ class MockLocationService : Service() {
         injectionLoopJob?.cancel()
         injectionLoopJob = null
         simulationEngine = null
+        thirdPartyCompatibilityUntilMillis = 0L
+        recoveryBurstRemain = 0
+    }
+
+    private fun handleInjectionReport(report: com.aurora.modifypositioning.model.InjectionReport) {
+        controller.onInjected(report)
+        if (report.recoveryStatus != null && recoveryBurstRemain < THIRD_PARTY_RECOVERY_BURST_COUNT) {
+            recoveryBurstRemain = THIRD_PARTY_RECOVERY_BURST_COUNT
+        }
     }
 
     private fun buildInjectTarget(
