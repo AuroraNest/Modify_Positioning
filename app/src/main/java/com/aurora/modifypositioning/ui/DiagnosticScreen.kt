@@ -52,7 +52,7 @@ fun DiagnosticScreen(
     val verdict = snapshot.toDiagnosticVerdict()
     val report = snapshot.toCopyableDiagnosticReport()
     val background = Brush.verticalGradient(
-        colors = listOf(Color(0xFFF8FAF8), Color(0xFFEAF1F3)),
+        colors = listOf(Color(0xFFF2F2F7), Color(0xFFF7F7FA)),
     )
 
     Box(
@@ -70,22 +70,22 @@ fun DiagnosticScreen(
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp),
-                color = Color(0xFF17212B),
+                color = Color.Transparent,
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(horizontal = 2.dp, vertical = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
-                        text = "诊断中心",
+                        text = "诊断",
                         style = MaterialTheme.typography.headlineSmall,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onBackground,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
                         text = "检查系统授权, 服务状态和第三方 App 生效条件.",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color(0xFFC8D6DC),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }

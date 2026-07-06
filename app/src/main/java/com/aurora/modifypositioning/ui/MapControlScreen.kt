@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -198,7 +199,7 @@ fun MapControlScreen(
     }
 
     val backgroundBrush = Brush.verticalGradient(
-        colors = listOf(Color(0xFFF8FAF8), Color(0xFFEAF1F3)),
+        colors = listOf(Color(0xFFF2F2F7), Color(0xFFF7F7FA)),
     )
 
     Box(
@@ -211,8 +212,8 @@ fun MapControlScreen(
             bottomBar = {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 6.dp,
+                    color = Color(0xFAFFFFFF),
+                    tonalElevation = 0.dp,
                     shadowElevation = 8.dp,
                     shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
                 ) {
@@ -232,7 +233,7 @@ fun MapControlScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                    .padding(horizontal = 16.dp, vertical = 14.dp)
                     .verticalScroll(
                         state = rememberScrollState(),
                         enabled = !mapInteracting,
@@ -301,12 +302,12 @@ fun MapControlScreen(
                                 .align(Alignment.TopStart)
                                 .padding(12.dp)
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xE6202A2E))
+                                .background(Color(0xEFFFFFFF))
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                         ) {
                             Text(
                                 text = "${if (uiState.mapProvider == MapProvider.AMAP) "高德" else "OSM"} / 中心候选",
-                                color = Color.White,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
@@ -315,7 +316,7 @@ fun MapControlScreen(
                             text = "+",
                             modifier = Modifier.align(Alignment.Center),
                             style = MaterialTheme.typography.headlineMedium,
-                            color = Color(0xFFE23D28),
+                            color = Color(0xFFFF3B30),
                             fontWeight = FontWeight.Bold,
                         )
                     }
@@ -365,11 +366,11 @@ private fun AppHeader(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
-        color = Color(0xFF17212B),
+        color = Color.Transparent,
         tonalElevation = 0.dp,
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(horizontal = 2.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(
@@ -379,15 +380,15 @@ private fun AppHeader(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
-                        text = "Modify Positioning",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = Color.White,
-                        fontWeight = FontWeight.SemiBold,
+                        text = "定位",
+                        style = MaterialTheme.typography.headlineLarge,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontWeight = FontWeight.Bold,
                     )
                     Text(
                         text = statusText,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color(0xFFC8D6DC),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 StatusPill(appState)
@@ -418,8 +419,8 @@ private fun AppHeader(
                 LinearProgressIndicator(
                     progress = { if (appState == MockState.Running) 1f else 0.42f },
                     modifier = Modifier.fillMaxWidth(),
-                    color = Color(0xFF36C98A),
-                    trackColor = Color(0xFF34424C),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
                 )
             }
         }
@@ -429,10 +430,10 @@ private fun AppHeader(
 @Composable
 private fun StatusPill(appState: MockState) {
     val (label, color) = when (appState) {
-        MockState.Idle -> "待启动" to Color(0xFF9AA8B2)
-        MockState.Running -> "运行中" to Color(0xFF36C98A)
-        MockState.Paused -> "已暂停" to Color(0xFFFFC857)
-        is MockState.Error -> "异常" to Color(0xFFFF6B57)
+        MockState.Idle -> "待启动" to Color(0xFF8E8E93)
+        MockState.Running -> "运行中" to Color(0xFF34C759)
+        MockState.Paused -> "已暂停" to Color(0xFFFF9F0A)
+        is MockState.Error -> "异常" to Color(0xFFFF3B30)
     }
     Surface(
         shape = RoundedCornerShape(8.dp),
@@ -457,14 +458,19 @@ private fun MetricBlock(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(8.dp),
-        color = Color(0xFF24313A),
+        color = MaterialTheme.colorScheme.surface,
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            Text(label, color = Color(0xFF9EAFB8), style = MaterialTheme.typography.labelSmall)
-            Text(value, color = Color.White, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
+            Text(
+                value,
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
     }
 }
@@ -512,12 +518,12 @@ private fun TargetControlPanel(
                 Spacer(modifier = Modifier.width(10.dp))
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFFFFF3D7),
+                    color = Color(0xFFE5F2FF),
                 ) {
                     Text(
                         text = if (uiState.calibrationMode == CoordinateCalibrationMode.MAINLAND_CHINA_COMPAT) "大陆兼容" else "原始坐标",
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                        color = Color(0xFF7A4A00),
+                        color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.labelMedium,
                     )
                 }
@@ -653,8 +659,12 @@ private fun CommandDock(
                 onClick = onPause,
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                ),
             ) {
-                Text("暂停移动")
+                Text("暂停")
             }
             OutlinedButton(
                 onClick = onStop,

@@ -49,7 +49,7 @@ fun MainControlScreen(
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    listOf(Color(0xFFF8FAF8), Color(0xFFEAF1F3)),
+                    listOf(Color(0xFFF2F2F7), Color(0xFFF7F7FA)),
                 ),
             ),
     ) {
@@ -62,19 +62,19 @@ fun MainControlScreen(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF17212B)),
+                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
             ) {
                 Column(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                    modifier = Modifier.padding(horizontal = 2.dp, vertical = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
-                        text = "定位修改控制台",
+                        text = "控制台",
                         style = MaterialTheme.typography.headlineSmall,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onBackground,
                         fontWeight = FontWeight.Bold,
                     )
-                    Text("当前状态: $stateLabel", color = Color(0xFFC8D6DC))
+                    Text("当前状态: $stateLabel", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 

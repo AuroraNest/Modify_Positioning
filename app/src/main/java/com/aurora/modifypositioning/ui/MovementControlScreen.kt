@@ -101,7 +101,7 @@ fun MovementControlScreen(
     onBack: () -> Unit,
 ) {
     val background = Brush.verticalGradient(
-        colors = listOf(Color(0xFFF8FAF8), Color(0xFFEAF1F3)),
+        colors = listOf(Color(0xFFF2F2F7), Color(0xFFF7F7FA)),
     )
 
     var mapCenter by remember(uiState.currentTarget) {
@@ -144,21 +144,21 @@ fun MovementControlScreen(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF17212B)),
+                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
             ) {
                 Column(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                    modifier = Modifier.padding(horizontal = 2.dp, vertical = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
-                        text = "路线模拟移动 (${if (uiState.mapProvider == MapProvider.AMAP) "高德底图" else "OSM 底图"})",
-                        color = Color.White,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
+                        text = "路线",
+                        color = MaterialTheme.colorScheme.onBackground,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "支持随机步行, 两点导航, 指定路线 (手绘/打钉)",
-                        color = Color(0xFFC8D6DC),
+                        text = "${if (uiState.mapProvider == MapProvider.AMAP) "高德底图" else "OSM 底图"} / 随机步行, 两点导航, 指定路线",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }

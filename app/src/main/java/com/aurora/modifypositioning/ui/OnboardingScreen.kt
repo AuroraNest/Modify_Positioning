@@ -38,7 +38,7 @@ fun OnboardingScreen(
 ) {
     val permissionsReady = missingPermissions.isEmpty()
     val background = Brush.verticalGradient(
-        colors = listOf(Color(0xFFF8FAF8), Color(0xFFEAF1F3)),
+        colors = listOf(Color(0xFFF2F2F7), Color(0xFFF7F7FA)),
     )
 
     Box(
@@ -56,23 +56,23 @@ fun OnboardingScreen(
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp),
-                color = Color(0xFF17212B),
+                color = Color.Transparent,
                 tonalElevation = 0.dp,
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(horizontal = 2.dp, vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Text(
-                        text = "准备控制台",
+                        text = "设置",
                         style = MaterialTheme.typography.headlineSmall,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onBackground,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
                         text = "完成系统授权后, 进入地图选点并启动虚拟定位.",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color(0xFFC8D6DC),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -168,16 +168,16 @@ private fun ReadinessChip(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(8.dp),
-        color = if (ready) Color(0xFF203D36) else Color(0xFF303941),
+        color = MaterialTheme.colorScheme.surface,
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            Text(label, color = Color(0xFF9EAFB8), style = MaterialTheme.typography.labelSmall)
+            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
             Text(
                 text = if (ready) "已完成" else "待处理",
-                color = if (ready) Color(0xFF36C98A) else Color(0xFFFFC857),
+                color = if (ready) Color(0xFF34C759) else Color(0xFFFF9F0A),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
             )

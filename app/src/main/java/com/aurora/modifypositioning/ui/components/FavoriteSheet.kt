@@ -98,7 +98,7 @@ private fun FavoriteRow(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFFF5F8F8),
+            containerColor = Color(0xFFF2F2F7),
         ),
     ) {
         Column(
