@@ -20,6 +20,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.aurora.modifypositioning.model.FavoriteLocation
 
@@ -35,13 +36,15 @@ fun FavoriteSheet(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("收藏点", style = MaterialTheme.typography.titleMedium)
+            Text("常用地点", style = MaterialTheme.typography.titleMedium)
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
@@ -49,17 +52,17 @@ fun FavoriteSheet(
                     onValueChange = onFavoriteNameInputChanged,
                     modifier = Modifier.weight(1f),
                     label = { Text("收藏名称") },
-                    placeholder = { Text("例如：微信打卡点") },
+                    placeholder = { Text("例如: 微信打卡点") },
                     singleLine = true,
                 )
-                Button(onClick = onAddFavorite, shape = RoundedCornerShape(12.dp)) {
+                Button(onClick = onAddFavorite, shape = RoundedCornerShape(8.dp)) {
                     Text("添加")
                 }
             }
 
             if (favorites.isEmpty()) {
                 Text(
-                    "暂无收藏，先选点再添加一个吧",
+                    "暂无收藏, 先选点再添加一个",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
@@ -93,9 +96,9 @@ private fun FavoriteRow(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            containerColor = Color(0xFFF5F8F8),
         ),
     ) {
         Column(
@@ -104,7 +107,7 @@ private fun FavoriteRow(
         ) {
             Text(item.name, style = MaterialTheme.typography.bodyMedium)
             Text(
-                text = String.format("纬度 %.5f，经度 %.5f", item.lat, item.lng),
+                text = String.format("纬度 %.5f, 经度 %.5f", item.lat, item.lng),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -123,7 +126,7 @@ private fun FavoriteRow(
                             onRenameFavorite(item, renameText)
                             renameMode = false
                         },
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(8.dp),
                     ) {
                         Text("保存")
                     }
@@ -133,13 +136,13 @@ private fun FavoriteRow(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = { onSelectFavorite(item) },
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(8.dp),
                 ) {
                     Text("使用")
                 }
                 FilledTonalButton(
                     onClick = { renameMode = !renameMode },
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(8.dp),
                 ) {
                     Text(if (renameMode) "取消重命名" else "重命名")
                 }

@@ -49,7 +49,7 @@ fun MainControlScreen(
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    listOf(Color(0xFFE5EEF8), Color(0xFFF6F9FD)),
+                    listOf(Color(0xFFF8FAF8), Color(0xFFEAF1F3)),
                 ),
             ),
     ) {
@@ -61,8 +61,8 @@ fun MainControlScreen(
         ) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F2942)),
+                shape = RoundedCornerShape(8.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF17212B)),
             ) {
                 Column(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
@@ -74,11 +74,11 @@ fun MainControlScreen(
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                     )
-                    Text("当前状态：$stateLabel", color = Color(0xFFBED7F0))
+                    Text("当前状态: $stateLabel", color = Color(0xFFC8D6DC))
                 }
             }
 
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
                 Column(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -86,27 +86,27 @@ fun MainControlScreen(
                     Text("目标位置")
                     Text(target.name, style = MaterialTheme.typography.titleMedium)
                     Text(
-                        text = String.format("纬度 %.5f，经度 %.5f", target.latitude, target.longitude),
+                        text = String.format("纬度 %.5f, 经度 %.5f", target.latitude, target.longitude),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
 
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
                 Column(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text("服务信息", style = MaterialTheme.typography.titleMedium)
                     Text(statusText, style = MaterialTheme.typography.bodyMedium)
-                    Text("增强注入模式：已启用", style = MaterialTheme.typography.bodyMedium)
+                    Text("增强注入模式: 已启用", style = MaterialTheme.typography.bodyMedium)
                 }
             }
 
             if (state is MockState.Error) {
                 Text(
-                    text = "异常详情：${state.message}",
+                    text = "异常详情: ${state.message}",
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -116,13 +116,13 @@ fun MainControlScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Button(onClick = onStart, modifier = Modifier.weight(1f)) {
+                Button(onClick = onStart, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)) {
                     Text("开始模拟")
                 }
-                FilledTonalButton(onClick = onPause, modifier = Modifier.weight(1f)) {
+                FilledTonalButton(onClick = onPause, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)) {
                     Text("暂停")
                 }
-                OutlinedButton(onClick = onStop, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = onStop, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)) {
                     Text("停止")
                 }
             }

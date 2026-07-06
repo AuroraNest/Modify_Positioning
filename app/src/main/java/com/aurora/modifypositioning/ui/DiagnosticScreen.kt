@@ -2,20 +2,27 @@ package com.aurora.modifypositioning.ui
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -44,21 +51,50 @@ fun DiagnosticScreen(
     val context = LocalContext.current
     val verdict = snapshot.toDiagnosticVerdict()
     val report = snapshot.toCopyableDiagnosticReport()
+    val background = Brush.verticalGradient(
+        colors = listOf(Color(0xFFF8FAF8), Color(0xFFEAF1F3)),
+    )
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .background(background),
     ) {
-        Text(
-            text = "诊断页面",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                color = Color(0xFF17212B),
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = "诊断中心",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = "检查系统授权, 服务状态和第三方 App 生效条件.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFFC8D6DC),
+                    )
+                }
+            }
 
-        Card(modifier = Modifier.fillMaxWidth()) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        ) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -71,63 +107,71 @@ fun DiagnosticScreen(
             }
         }
 
-        Card(modifier = Modifier.fillMaxWidth()) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        ) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text("系统环境")
-                Text("检测时间：${formatTime(snapshot.generatedAtMillis)}")
-                Text("模拟位置信息应用：${if (snapshot.isMockAppSelected) "已设置" else "未设置"}")
-                Text("GPS 开关：${if (snapshot.gpsEnabled) "开启" else "关闭"}")
-                Text("网络定位开关：${if (snapshot.networkEnabled) "开启" else "关闭"}")
-                Text("坐标校准模式：${snapshot.calibrationMode}")
-                Text("会话搜索请求数：${snapshot.searchRequestCount}")
+                Text("检测时间: ${formatTime(snapshot.generatedAtMillis)}")
+                Text("模拟位置信息应用: ${if (snapshot.isMockAppSelected) "已设置" else "未设置"}")
+                Text("GPS 开关: ${if (snapshot.gpsEnabled) "开启" else "关闭"}")
+                Text("网络定位开关: ${if (snapshot.networkEnabled) "开启" else "关闭"}")
+                Text("坐标校准模式: ${snapshot.calibrationMode}")
+                Text("会话搜索请求数: ${snapshot.searchRequestCount}")
                 Text(
                     if (snapshot.missingPermissions.isEmpty()) {
-                        "权限：完整"
+                        "权限: 完整"
                     } else {
-                        "权限缺失：${snapshot.missingPermissions.joinToString()}"
+                        "权限缺失: ${snapshot.missingPermissions.joinToString()}"
                     },
                 )
             }
         }
 
-        Card(modifier = Modifier.fillMaxWidth()) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        ) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text("应用运行状态")
-                Text("服务状态：${stateLabel(snapshot.appState)}")
-                Text("移动模式：${movementModeLabel(snapshot.movementMode)}")
-                Text("移动状态：${movementStateLabel(snapshot.movementState)}")
-                Text("当前速度：${"%.2f".format(snapshot.movementCurrentSpeedMps)} m/s")
-                Text("距中心距离：${"%.1f".format(snapshot.movementDistanceFromCenterMeters)} 米")
+                Text("服务状态: ${stateLabel(snapshot.appState)}")
+                Text("移动模式: ${movementModeLabel(snapshot.movementMode)}")
+                Text("移动状态: ${movementStateLabel(snapshot.movementState)}")
+                Text("当前速度: ${"%.2f".format(snapshot.movementCurrentSpeedMps)} m/s")
+                Text("距中心距离: ${"%.1f".format(snapshot.movementDistanceFromCenterMeters)} 米")
                 if (snapshot.routeMode != null) {
-                    Text("路线模式：${movementModeLabel(snapshot.routeMode)}")
-                    Text("交通方式：${travelModeLabel(snapshot.travelMode)}")
-                    Text("路线来源：${routeSourceLabel(snapshot.routeSource)}")
-                    Text("剩余距离：${formatDistance(snapshot.remainingDistanceMeters)}")
-                    Text("剩余时间：${formatDuration(snapshot.remainingDurationSeconds)}")
-                    Text("路线进度：${formatPercent(snapshot.routeProgressPercent)}")
+                    Text("路线模式: ${movementModeLabel(snapshot.routeMode)}")
+                    Text("交通方式: ${travelModeLabel(snapshot.travelMode)}")
+                    Text("路线来源: ${routeSourceLabel(snapshot.routeSource)}")
+                    Text("剩余距离: ${formatDistance(snapshot.remainingDistanceMeters)}")
+                    Text("剩余时间: ${formatDuration(snapshot.remainingDurationSeconds)}")
+                    Text("路线进度: ${formatPercent(snapshot.routeProgressPercent)}")
                 }
                 Text(
                     text = if (snapshot.movementLastPointTimeMillis == null) {
-                        "最近移动点：暂无"
+                        "最近移动点: 暂无"
                     } else {
-                        "最近移动点：${formatTime(snapshot.movementLastPointTimeMillis)}"
+                        "最近移动点: ${formatTime(snapshot.movementLastPointTimeMillis)}"
                     },
                 )
                 val injection = snapshot.lastInjection
                 if (injection == null) {
-                    Text("最近注入：暂无")
+                    Text("最近注入: 暂无")
                 } else {
                     Text(
-                        "最近注入：${injection.provider} @ (${injection.latitude}, ${injection.longitude})",
+                        "最近注入: ${injection.provider} @ (${injection.latitude}, ${injection.longitude})",
                     )
-                    Text("注入精度：${"%.1f".format(injection.accuracyMeters)} 米")
-                    Text("注入时间：${formatTime(injection.timeMillis)}")
+                    Text("注入精度: ${"%.1f".format(injection.accuracyMeters)} 米")
+                    Text("注入时间: ${formatTime(injection.timeMillis)}")
                     Text("验证 mock: ${injection.verificationMockStatus ?: "-"}")
                     Text("验证距离: ${formatDistance(injection.verificationDistanceMeters)}")
                     Text("provider 重建时间: ${formatTimeOrDash(injection.providerRebuildTimeMillis)}")
@@ -139,7 +183,11 @@ fun DiagnosticScreen(
         DiagnosticLocationCard(title = "GPS 最近位置", location = snapshot.gpsLastKnown)
         DiagnosticLocationCard(title = "Network 最近位置", location = snapshot.networkLastKnown)
 
-        Card(modifier = Modifier.fillMaxWidth()) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        ) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -157,7 +205,11 @@ fun DiagnosticScreen(
             }
         }
 
-        Card(modifier = Modifier.fillMaxWidth()) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        ) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -170,7 +222,11 @@ fun DiagnosticScreen(
             }
         }
 
-        Card(modifier = Modifier.fillMaxWidth()) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        ) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -193,16 +249,18 @@ fun DiagnosticScreen(
                 )
             },
             modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
         ) {
             Text("复制诊断")
         }
 
-        Button(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = onRefresh, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
             Text("刷新诊断")
         }
 
         TextButton(onClick = onBack) {
             Text("返回控制台")
+        }
         }
     }
 }
@@ -224,7 +282,11 @@ private fun DiagnosticLocationCard(
     title: String,
     location: DiagnosticLocation?,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -233,11 +295,11 @@ private fun DiagnosticLocationCard(
             if (location == null) {
                 Text("无可读位置")
             } else {
-                Text("坐标：(${location.latitude}, ${location.longitude})")
-                Text("精度：${"%.1f".format(location.accuracyMeters)} 米")
-                Text("mock 标记：${if (location.isMock) "true" else "false"}")
-                Text("距注入目标：${formatDistance(location.distanceToLastInjectionMeters)}")
-                Text("时间：${formatTime(location.timeMillis)}")
+                Text("坐标: (${location.latitude}, ${location.longitude})")
+                Text("精度: ${"%.1f".format(location.accuracyMeters)} 米")
+                Text("mock 标记: ${if (location.isMock) "true" else "false"}")
+                Text("距注入目标: ${formatDistance(location.distanceToLastInjectionMeters)}")
+                Text("时间: ${formatTime(location.timeMillis)}")
             }
         }
     }

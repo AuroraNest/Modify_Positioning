@@ -9,10 +9,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -20,6 +22,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -53,7 +57,9 @@ import com.amap.api.maps.MapView as AMapView
 import com.amap.api.maps.model.LatLng
 import com.aurora.modifypositioning.model.CoordinateCalibrationMode
 import com.aurora.modifypositioning.model.FavoriteLocation
+import com.aurora.modifypositioning.model.InjectionReport
 import com.aurora.modifypositioning.model.MapProvider
+import com.aurora.modifypositioning.model.MockState
 import com.aurora.modifypositioning.model.PlaceSuggestion
 import com.aurora.modifypositioning.model.SelectionSource
 import com.aurora.modifypositioning.ui.components.FavoriteSheet
@@ -74,6 +80,9 @@ import org.osmdroid.views.MapView as OsmMapView
 @Composable
 fun MapControlScreen(
     uiState: MapControlUiState,
+    appState: MockState,
+    statusText: String,
+    lastInjection: InjectionReport?,
     onSearchQueryChanged: (String) -> Unit,
     onSuggestionSelected: (PlaceSuggestion) -> Unit,
     onMapDraggedSelection: (Double, Double) -> Unit,
@@ -189,10 +198,7 @@ fun MapControlScreen(
     }
 
     val backgroundBrush = Brush.verticalGradient(
-        colors = listOf(
-            Color(0xFFF7F8FA),
-            Color(0xFFEFF3F7),
-        ),
+        colors = listOf(Color(0xFFF8FAF8), Color(0xFFEAF1F3)),
     )
 
     Box(
@@ -206,46 +212,19 @@ fun MapControlScreen(
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     color = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 8.dp,
-                    shadowElevation = 10.dp,
-                    shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
+                    tonalElevation = 6.dp,
+                    shadowElevation = 8.dp,
+                    shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Button(onClick = onStart, modifier = Modifier.weight(1f)) {
-                                Text("开始")
-                            }
-                            FilledTonalButton(onClick = onPause, modifier = Modifier.weight(1f)) {
-                                Text("暂停")
-                            }
-                            OutlinedButton(onClick = onStop, modifier = Modifier.weight(1f)) {
-                                Text("停止")
-                            }
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            TextButton(onClick = onOpenGuide, modifier = Modifier.weight(1f)) {
-                                Text("首次引导")
-                            }
-                            TextButton(onClick = onOpenMovement, modifier = Modifier.weight(1f)) {
-                                Text("模拟移动")
-                            }
-                            TextButton(onClick = onOpenDiagnostic, modifier = Modifier.weight(1f)) {
-                                Text("诊断页面")
-                            }
-                        }
-                    }
+                    CommandDock(
+                        appState = appState,
+                        onStart = onStart,
+                        onPause = onPause,
+                        onStop = onStop,
+                        onOpenGuide = onOpenGuide,
+                        onOpenMovement = onOpenMovement,
+                        onOpenDiagnostic = onOpenDiagnostic,
+                    )
                 }
             },
         ) { innerPadding ->
@@ -253,97 +232,35 @@ fun MapControlScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .padding(horizontal = 12.dp)
+                    .padding(horizontal = 14.dp, vertical = 12.dp)
                     .verticalScroll(
                         state = rememberScrollState(),
                         enabled = !mapInteracting,
                     ),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(22.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 15.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(
-                            text = "地图精细选点控制台",
-                            color = MaterialTheme.colorScheme.onSurface,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            text = "拖动地图后稍停, 再选择\"用地图中心点\"",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Text(
-                            text = "当前地图源: ${if (uiState.mapProvider == MapProvider.AMAP) "高德" else "OSM"}",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        if (!uiState.isAmapAndroidAvailable) {
-                            Text(
-                                text = "高德为高级选项, 需要先填写 Android Key",
-                                color = Color(0xFFFFB4AB),
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                        if (uiState.mapProvider == MapProvider.AMAP && !uiState.isAmapWebSearchAvailable) {
-                            Text(
-                                text = "高德搜索未配置 Web Key, 可切到 OSM 搜索",
-                                color = Color(0xFFC97800),
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                    }
-                }
+                AppHeader(
+                    appState = appState,
+                    statusText = statusText,
+                    mapProvider = uiState.mapProvider,
+                    lastInjection = lastInjection,
+                )
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    FilledTonalButton(
-                        onClick = { onMapProviderChanged(MapProvider.AMAP) },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(if (uiState.mapProvider == MapProvider.AMAP) "已选: 高德(国内)" else "高德(国内)")
-                    }
-                    FilledTonalButton(
-                        onClick = { onMapProviderChanged(MapProvider.OSM) },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(if (uiState.mapProvider == MapProvider.OSM) "已选: OSM" else "OSM")
-                    }
-                }
-
-                TextButton(
-                    onClick = { onAdvancedSettingsVisibleChanged(!uiState.showAdvancedSettings) },
-                    modifier = Modifier.align(Alignment.End),
-                ) {
-                    Text(if (uiState.showAdvancedSettings) "收起高级设置" else "高级设置")
-                }
-
-                if (uiState.showAdvancedSettings) {
-                    AMapAdvancedSettingsCard(
-                        androidKey = uiState.amapAndroidKey,
-                        webKey = uiState.amapWebKey,
-                        hasBuildAndroidKey = uiState.isAmapAndroidAvailable && uiState.amapAndroidKey.isBlank(),
-                        hasBuildWebKey = uiState.isAmapWebSearchAvailable && uiState.amapWebKey.isBlank(),
-                        onAndroidKeyChanged = onAmapAndroidKeyChanged,
-                        onWebKeyChanged = onAmapWebKeyChanged,
-                    )
-                }
+                PlaceSearchBar(
+                    query = uiState.searchQuery,
+                    suggestions = uiState.suggestions,
+                    isSearching = uiState.isSearching,
+                    searchError = uiState.searchError,
+                    onQueryChanged = onSearchQueryChanged,
+                    onSelectSuggestion = onSuggestionSelected,
+                )
 
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(330.dp),
-                    shape = RoundedCornerShape(18.dp),
+                        .height(390.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                 ) {
                     Box(modifier = Modifier.fillMaxSize()) {
                         if (uiState.mapProvider == MapProvider.AMAP) {
@@ -383,12 +300,12 @@ fun MapControlScreen(
                             modifier = Modifier
                                 .align(Alignment.TopStart)
                                 .padding(12.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xCC0F2942))
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xE6202A2E))
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
                         ) {
                             Text(
-                                text = "十字中心点就是候选目标",
+                                text = "${if (uiState.mapProvider == MapProvider.AMAP) "高德" else "OSM"} / 中心候选",
                                 color = Color.White,
                                 style = MaterialTheme.typography.bodySmall,
                             )
@@ -398,66 +315,30 @@ fun MapControlScreen(
                             text = "+",
                             modifier = Modifier.align(Alignment.Center),
                             style = MaterialTheme.typography.headlineMedium,
-                            color = Color(0xFFE53935),
+                            color = Color(0xFFE23D28),
                             fontWeight = FontWeight.Bold,
                         )
                     }
                 }
 
-                PlaceSearchBar(
-                    query = uiState.searchQuery,
-                    suggestions = uiState.suggestions,
-                    isSearching = uiState.isSearching,
-                    searchError = uiState.searchError,
-                    onQueryChanged = onSearchQueryChanged,
-                    onSelectSuggestion = onSuggestionSelected,
+                TargetControlPanel(
+                    uiState = uiState,
+                    onUseSearchTarget = onUseSearchTarget,
+                    onUseMapCenterTarget = onUseMapCenterTarget,
+                    onCalibrationModeChanged = onCalibrationModeChanged,
+                    onMapProviderChanged = onMapProviderChanged,
+                    onAdvancedSettingsVisibleChanged = onAdvancedSettingsVisibleChanged,
                 )
 
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(
-                            text = "当前生效目标: ${uiState.selectedTarget.name}",
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        Text(
-                            text = "地图中心候选: ${formatCoord(uiState.mapCenterCandidate.latitude)}, ${formatCoord(uiState.mapCenterCandidate.longitude)}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            FilledTonalButton(
-                                onClick = onUseSearchTarget,
-                                enabled = uiState.lastSearchTarget != null,
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Text("用搜索点")
-                            }
-                            OutlinedButton(
-                                onClick = onUseMapCenterTarget,
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Text("用地图中心点")
-                            }
-                        }
-                        Text(
-                            text = "会话搜索请求数: ${uiState.searchRequestCount}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        CalibrationSelector(
-                            mode = uiState.calibrationMode,
-                            onModeChanged = onCalibrationModeChanged,
-                        )
-                    }
+                if (uiState.showAdvancedSettings) {
+                    AMapAdvancedSettingsCard(
+                        androidKey = uiState.amapAndroidKey,
+                        webKey = uiState.amapWebKey,
+                        hasBuildAndroidKey = uiState.isAmapAndroidAvailable && uiState.amapAndroidKey.isBlank(),
+                        hasBuildWebKey = uiState.isAmapWebSearchAvailable && uiState.amapWebKey.isBlank(),
+                        onAndroidKeyChanged = onAmapAndroidKeyChanged,
+                        onWebKeyChanged = onAmapWebKeyChanged,
+                    )
                 }
 
                 FavoriteSheet(
@@ -469,6 +350,333 @@ fun MapControlScreen(
                     onDeleteFavorite = onDeleteFavorite,
                     onRenameFavorite = onRenameFavorite,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppHeader(
+    appState: MockState,
+    statusText: String,
+    mapProvider: MapProvider,
+    lastInjection: InjectionReport?,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = Color(0xFF17212B),
+        tonalElevation = 0.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = "Modify Positioning",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = statusText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFFC8D6DC),
+                    )
+                }
+                StatusPill(appState)
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                MetricBlock(
+                    label = "地图",
+                    value = if (mapProvider == MapProvider.AMAP) "高德" else "OSM",
+                    modifier = Modifier.weight(1f),
+                )
+                MetricBlock(
+                    label = "最近注入",
+                    value = lastInjection?.let { "${"%.1f".format(it.accuracyMeters)}m" } ?: "--",
+                    modifier = Modifier.weight(1f),
+                )
+                MetricBlock(
+                    label = "兼容窗口",
+                    value = "60s",
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            if (appState == MockState.Running || appState == MockState.Paused) {
+                LinearProgressIndicator(
+                    progress = { if (appState == MockState.Running) 1f else 0.42f },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color(0xFF36C98A),
+                    trackColor = Color(0xFF34424C),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusPill(appState: MockState) {
+    val (label, color) = when (appState) {
+        MockState.Idle -> "待启动" to Color(0xFF9AA8B2)
+        MockState.Running -> "运行中" to Color(0xFF36C98A)
+        MockState.Paused -> "已暂停" to Color(0xFFFFC857)
+        is MockState.Error -> "异常" to Color(0xFFFF6B57)
+    }
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = color.copy(alpha = 0.18f),
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            color = color,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Composable
+private fun MetricBlock(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        color = Color(0xFF24313A),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(label, color = Color(0xFF9EAFB8), style = MaterialTheme.typography.labelSmall)
+            Text(value, color = Color.White, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun TargetControlPanel(
+    uiState: MapControlUiState,
+    onUseSearchTarget: () -> Unit,
+    onUseMapCenterTarget: () -> Unit,
+    onCalibrationModeChanged: (CoordinateCalibrationMode) -> Unit,
+    onMapProviderChanged: (MapProvider) -> Unit,
+    onAdvancedSettingsVisibleChanged: (Boolean) -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
+                    Text("当前目标", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        text = uiState.selectedTarget.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = "${formatCoord(uiState.selectedTarget.latitude)}, ${formatCoord(uiState.selectedTarget.longitude)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFFFFF3D7),
+                ) {
+                    Text(
+                        text = if (uiState.calibrationMode == CoordinateCalibrationMode.MAINLAND_CHINA_COMPAT) "大陆兼容" else "原始坐标",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                        color = Color(0xFF7A4A00),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = onUseMapCenterTarget,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(8.dp),
+                ) {
+                    Text("使用地图中心")
+                }
+                FilledTonalButton(
+                    onClick = onUseSearchTarget,
+                    enabled = uiState.lastSearchTarget != null,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(8.dp),
+                ) {
+                    Text("使用搜索结果")
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ProviderButton(
+                    label = "高德",
+                    selected = uiState.mapProvider == MapProvider.AMAP,
+                    onClick = { onMapProviderChanged(MapProvider.AMAP) },
+                    modifier = Modifier.weight(1f),
+                )
+                ProviderButton(
+                    label = "OSM",
+                    selected = uiState.mapProvider == MapProvider.OSM,
+                    onClick = { onMapProviderChanged(MapProvider.OSM) },
+                    modifier = Modifier.weight(1f),
+                )
+                FilledTonalButton(
+                    onClick = { onAdvancedSettingsVisibleChanged(!uiState.showAdvancedSettings) },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(8.dp),
+                ) {
+                    Text(if (uiState.showAdvancedSettings) "收起" else "高级")
+                }
+            }
+
+            Text(
+                text = "中心候选 ${formatCoord(uiState.mapCenterCandidate.latitude)}, ${formatCoord(uiState.mapCenterCandidate.longitude)} | 搜索 ${uiState.searchRequestCount} 次",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            CalibrationSelector(
+                mode = uiState.calibrationMode,
+                onModeChanged = onCalibrationModeChanged,
+            )
+
+            if (!uiState.isAmapAndroidAvailable || (uiState.mapProvider == MapProvider.AMAP && !uiState.isAmapWebSearchAvailable)) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFFFFF8E8),
+                ) {
+                    Text(
+                        text = if (!uiState.isAmapAndroidAvailable) {
+                            "高德底图需要 Android Key, 可先使用 OSM"
+                        } else {
+                            "高德搜索需要 Web Key, 底图不受影响"
+                        },
+                        modifier = Modifier.padding(10.dp),
+                        color = Color(0xFF7A4A00),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProviderButton(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (selected) {
+        Button(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(8.dp)) {
+            Text(label)
+        }
+    } else {
+        OutlinedButton(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(8.dp)) {
+            Text(label)
+        }
+    }
+}
+
+@Composable
+private fun CommandDock(
+    appState: MockState,
+    onStart: () -> Unit,
+    onPause: () -> Unit,
+    onStop: () -> Unit,
+    onOpenGuide: () -> Unit,
+    onOpenMovement: () -> Unit,
+    onOpenDiagnostic: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Button(
+                onClick = onStart,
+                modifier = Modifier.weight(1.4f),
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Text(if (appState == MockState.Running) "重新锁定" else "开始虚拟定位")
+            }
+            FilledTonalButton(
+                onClick = onPause,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Text("暂停移动")
+            }
+            OutlinedButton(
+                onClick = onStop,
+                modifier = Modifier.weight(0.85f),
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Text("停止")
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            TextButton(onClick = onOpenMovement, modifier = Modifier.weight(1f)) {
+                Text("路线")
+            }
+            TextButton(onClick = onOpenDiagnostic, modifier = Modifier.weight(1f)) {
+                Text("诊断")
+            }
+            TextButton(onClick = onOpenGuide, modifier = Modifier.weight(1f)) {
+                Text("设置")
             }
         }
     }
@@ -487,9 +695,9 @@ private fun AMapPanel(
             .border(
                 width = 1.dp,
                 color = Color(0xFFCFDCE9),
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(8.dp),
             )
-            .clip(RoundedCornerShape(18.dp)),
+            .clip(RoundedCornerShape(8.dp)),
         factory = { context ->
             if (uiState.effectiveAmapAndroidKey.isNotBlank()) {
                 MapsInitializer.setApiKey(uiState.effectiveAmapAndroidKey)
@@ -560,9 +768,9 @@ private fun OSMPanel(
             .border(
                 width = 1.dp,
                 color = Color(0xFFCFDCE9),
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(8.dp),
             )
-            .clip(RoundedCornerShape(18.dp)),
+            .clip(RoundedCornerShape(8.dp)),
         factory = { context ->
             Configuration.getInstance().load(
                 context,
@@ -639,7 +847,7 @@ private fun AMapAdvancedSettingsCard(
     onAndroidKeyChanged: (String) -> Unit,
     onWebKeyChanged: (String) -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
         Column(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -680,12 +888,14 @@ private fun CalibrationSelector(
             FilledTonalButton(
                 onClick = { onModeChanged(CoordinateCalibrationMode.OFF) },
                 modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(8.dp),
             ) {
                 Text(if (mode == CoordinateCalibrationMode.OFF) "已选: 关闭" else "关闭")
             }
             FilledTonalButton(
                 onClick = { onModeChanged(CoordinateCalibrationMode.MAINLAND_CHINA_COMPAT) },
                 modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(8.dp),
             ) {
                 Text(
                     if (mode == CoordinateCalibrationMode.MAINLAND_CHINA_COMPAT) {

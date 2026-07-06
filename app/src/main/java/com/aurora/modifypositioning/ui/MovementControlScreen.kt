@@ -101,7 +101,7 @@ fun MovementControlScreen(
     onBack: () -> Unit,
 ) {
     val background = Brush.verticalGradient(
-        colors = listOf(Color(0xFFE6EFF8), Color(0xFFF7FAFD)),
+        colors = listOf(Color(0xFFF8FAF8), Color(0xFFEAF1F3)),
     )
 
     var mapCenter by remember(uiState.currentTarget) {
@@ -143,22 +143,22 @@ fun MovementControlScreen(
         ) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F2942)),
+                shape = RoundedCornerShape(8.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF17212B)),
             ) {
                 Column(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
-                        text = "路线模拟移动（${if (uiState.mapProvider == MapProvider.AMAP) "高德底图" else "OSM 底图"}）",
+                        text = "路线模拟移动 (${if (uiState.mapProvider == MapProvider.AMAP) "高德底图" else "OSM 底图"})",
                         color = Color.White,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        text = "支持随机步行、两点导航、指定路线（手绘/打钉）",
-                        color = Color(0xFFBED7F0),
+                        text = "支持随机步行, 两点导航, 指定路线 (手绘/打钉)",
+                        color = Color(0xFFC8D6DC),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -186,7 +186,7 @@ fun MovementControlScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(330.dp),
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(8.dp),
             ) {
                 MovementMap(
                     currentLat = uiState.currentTarget.latitude,
@@ -206,7 +206,7 @@ fun MovementControlScreen(
 
             Box(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = "地图中心：${formatCoord(mapCenter.latitude)}, ${formatCoord(mapCenter.longitude)}",
+                    text = "地图中心: ${formatCoord(mapCenter.latitude)}, ${formatCoord(mapCenter.longitude)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -295,16 +295,16 @@ fun MovementControlScreen(
 
 @Composable
 private fun RandomWalkPanel(uiState: MovementUiState) {
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
         Column(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text("中心点：${uiState.centerTarget.name}", style = MaterialTheme.typography.titleMedium)
-            Text("移动状态：${movementStateLabel(uiState.movementState)}")
-            Text("当前速度：${"%.2f".format(uiState.currentSpeedMps)} m/s")
-            Text("距中心距离：${"%.1f".format(uiState.distanceFromCenterMeters)} 米")
-            Text("轨迹点数：${uiState.tracePoints.size}")
+            Text("中心点: ${uiState.centerTarget.name}", style = MaterialTheme.typography.titleMedium)
+            Text("移动状态: ${movementStateLabel(uiState.movementState)}")
+            Text("当前速度: ${"%.2f".format(uiState.currentSpeedMps)} m/s")
+            Text("距中心距离: ${"%.1f".format(uiState.distanceFromCenterMeters)} 米")
+            Text("轨迹点数: ${uiState.tracePoints.size}")
         }
     }
 }
@@ -318,7 +318,7 @@ private fun PointToPointPanel(
     onSetEnd: () -> Unit,
     onPlan: () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
         Column(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -328,33 +328,33 @@ private fun PointToPointPanel(
                 mode = uiState.navigationDraft.travelMode,
                 onSelect = onSetTravelMode,
             )
-            Text("起点：${uiState.navigationDraft.start?.name ?: "未设置"}")
-            Text("终点：${uiState.navigationDraft.end?.name ?: "未设置"}")
-            Text("中心点可用于设起点/终点：${formatCoord(center.latitude)}, ${formatCoord(center.longitude)}")
+            Text("起点: ${uiState.navigationDraft.start?.name ?: "未设置"}")
+            Text("终点: ${uiState.navigationDraft.end?.name ?: "未设置"}")
+            Text("中心点可用于设起点/终点: ${formatCoord(center.latitude)}, ${formatCoord(center.longitude)}")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onSetStart, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = onSetStart, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)) {
                     Text("设为起点")
                 }
-                OutlinedButton(onClick = onSetEnd, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = onSetEnd, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)) {
                     Text("设为终点")
                 }
             }
-            Button(onClick = onPlan, modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = onPlan, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
                 Text("重算路线")
             }
             when (val state = uiState.pointToPointRouteState) {
                 PlannedRouteState.Idle -> Text("等待设置起终点后自动规划")
                 PlannedRouteState.Loading -> Text("正在规划路线...")
-                is PlannedRouteState.Error -> Text("规划失败：${state.message}", color = MaterialTheme.colorScheme.error)
+                is PlannedRouteState.Error -> Text("规划失败: ${state.message}", color = MaterialTheme.colorScheme.error)
                 is PlannedRouteState.Ready -> {
-                    Text("路线距离：${"%.1f".format(state.route.distanceMeters)} 米")
-                    Text("预计时间：${"%.1f".format(state.route.durationSeconds / 60.0)} 分钟")
+                    Text("路线距离: ${"%.1f".format(state.route.distanceMeters)} 米")
+                    Text("预计时间: ${"%.1f".format(state.route.durationSeconds / 60.0)} 分钟")
                 }
             }
             uiState.routeProgress?.let { progress ->
-                Text("剩余距离：${"%.1f".format(progress.remainingMeters)} 米")
-                Text("剩余时间：${"%.1f".format(progress.remainingSeconds / 60.0)} 分钟")
-                Text("完成进度：${"%.1f".format(progress.percent)}%")
+                Text("剩余距离: ${"%.1f".format(progress.remainingMeters)} 米")
+                Text("剩余时间: ${"%.1f".format(progress.remainingSeconds / 60.0)} 分钟")
+                Text("完成进度: ${"%.1f".format(progress.percent)}%")
             }
         }
     }
@@ -373,7 +373,7 @@ private fun CustomRoutePanel(
     onApplySavedRoute: (String) -> Unit,
     onDeleteSavedRoute: (String) -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
         Column(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -400,35 +400,35 @@ private fun CustomRoutePanel(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text("吸附道路（默认开启）")
+                Text("吸附道路 (默认开启)")
                 Switch(
                     checked = uiState.customRouteDraft.snapToRoad,
                     onCheckedChange = onSetSnapToRoad,
                 )
             }
-            Text("当前路线点数：${uiState.customRouteDraft.points.size}")
+            Text("当前路线点数: ${uiState.customRouteDraft.points.size}")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onAddPoint, modifier = Modifier.weight(1f)) {
+                Button(onClick = onAddPoint, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)) {
                     Text("添加中心点")
                 }
-                OutlinedButton(onClick = onUndo, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = onUndo, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)) {
                     Text("撤销一步")
                 }
-                OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)) {
                     Text("清空")
                 }
             }
-            Button(onClick = onConfirm, modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = onConfirm, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
                 Text("确认路线")
             }
 
             when (val state = uiState.customRouteState) {
                 PlannedRouteState.Idle -> Text("手绘/打钉后点击确认路线")
                 PlannedRouteState.Loading -> Text("正在处理路线...")
-                is PlannedRouteState.Error -> Text("路线失败：${state.message}", color = MaterialTheme.colorScheme.error)
+                is PlannedRouteState.Error -> Text("路线失败: ${state.message}", color = MaterialTheme.colorScheme.error)
                 is PlannedRouteState.Ready -> {
-                    Text("路线距离：${"%.1f".format(state.route.distanceMeters)} 米")
-                    Text("预计时间：${"%.1f".format(state.route.durationSeconds / 60.0)} 分钟")
+                    Text("路线距离: ${"%.1f".format(state.route.distanceMeters)} 米")
+                    Text("预计时间: ${"%.1f".format(state.route.durationSeconds / 60.0)} 分钟")
                 }
             }
 
@@ -437,7 +437,7 @@ private fun CustomRoutePanel(
                 uiState.savedRoutes.take(3).forEach { route ->
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(8.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surfaceVariant,
                         ),
@@ -448,7 +448,7 @@ private fun CustomRoutePanel(
                         ) {
                             Text(route.name)
                             Text(
-                                "距离 ${"%.1f".format(route.distanceMeters)} 米 · ${"%.1f".format(route.durationSeconds / 60.0)} 分钟",
+                                "距离 ${"%.1f".format(route.distanceMeters)} 米 | ${"%.1f".format(route.durationSeconds / 60.0)} 分钟",
                                 style = MaterialTheme.typography.bodySmall,
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -501,13 +501,13 @@ private fun ActionButtons(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Button(onClick = onStart, modifier = Modifier.weight(1f)) {
+        Button(onClick = onStart, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)) {
             Text("开始")
         }
-        OutlinedButton(onClick = onPause, modifier = Modifier.weight(1f)) {
+        OutlinedButton(onClick = onPause, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)) {
             Text("暂停")
         }
-        OutlinedButton(onClick = onStop, modifier = Modifier.weight(1f)) {
+        OutlinedButton(onClick = onStop, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)) {
             Text("停止")
         }
     }
@@ -587,7 +587,7 @@ private fun MovementAMap(
     AndroidView(
         modifier = Modifier
             .fillMaxSize()
-            .clip(RoundedCornerShape(18.dp)),
+            .clip(RoundedCornerShape(8.dp)),
         factory = { context ->
             MapsInitializer.setApiKey(effectiveAmapAndroidKey)
             AMapView(context).apply {
@@ -674,7 +674,7 @@ private fun MovementAMap(
             routeLine?.points = route.map { LatLng(it.lat, it.lng) }
         },
         onRelease = { mapView ->
-            // 某些机型销毁时会触发高德 native 崩溃，先仅暂停以保证切页稳定。
+            // 某些机型销毁时会触发高德 native 崩溃, 先仅暂停以保证切页稳定.
             onMapTouchStateChanged(false)
             mapView.onPause()
         },
@@ -719,7 +719,7 @@ private fun MovementOsmMap(
     AndroidView(
         modifier = Modifier
             .fillMaxSize()
-            .clip(RoundedCornerShape(18.dp)),
+            .clip(RoundedCornerShape(8.dp)),
         factory = { context ->
             Configuration.getInstance().load(
                 context,

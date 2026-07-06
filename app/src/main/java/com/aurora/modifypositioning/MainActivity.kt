@@ -283,6 +283,9 @@ class MainActivity : ComponentActivity() {
                         UiScreen.MAP -> {
                             MapControlScreen(
                                 uiState = mapUiState,
+                                appState = state,
+                                statusText = statusText,
+                                lastInjection = lastInjection,
                                 onSearchQueryChanged = { mapViewModel.onSearchQueryChanged(it) },
                                 onSuggestionSelected = { mapViewModel.onSuggestionSelected(it) },
                                 onMapDraggedSelection = { lat, lng -> mapViewModel.onMapDraggedSelection(lat, lng) },

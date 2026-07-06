@@ -40,7 +40,7 @@ fun PlaceSearchBar(
             label = { Text("搜索位置") },
             placeholder = { Text("上海外滩, 东京塔, Times Square") },
             singleLine = true,
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(8.dp),
             textStyle = MaterialTheme.typography.bodyLarge,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = MaterialTheme.colorScheme.surface,
@@ -81,10 +81,10 @@ fun PlaceSearchBar(
         if (suggestions.isNotEmpty()) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(8.dp),
                 color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 2.dp,
-                shadowElevation = 4.dp,
+                tonalElevation = 1.dp,
+                shadowElevation = 2.dp,
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     suggestions.forEachIndexed { index, item ->
