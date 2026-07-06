@@ -165,6 +165,19 @@ AMAP_WEB_API_KEY=your_web_key
 6. 清理目标 App 的位置缓存.
 7. 若仍无效, 通常是目标 App anti-mock, cache, server validation, IP/Wi-Fi/基站辅助判断或账号风控导致.
 
+### 高德地图为什么可能要开一会儿才稳定
+
+高德地图不一定会立刻使用系统最新 mock 点. 它可能先读取自己的 last location cache, 再结合 GPS, Network, Fused, Wi-Fi, 基站, IP, 传感器和高德定位 SDK 做融合与平滑. 当目标点距离真实位置很远时, 高德还可能先观察一段连续定位, 避免瞬移造成体验异常.
+
+因此启动虚拟定位后, 高德可能需要持续注入一小段时间才会稳定显示目标地点. 建议流程:
+
+1. 先在 Modify Positioning 里开始虚拟定位.
+2. 等待 5-15 秒, 或打开诊断页确认 GPS / Network / Fused 最近位置接近目标点.
+3. 强制停止并重新打开高德地图, 或在高德内手动刷新定位.
+4. 若仍反复回真实位置, 优先检查 mock app 设置, 权限, 电池限制和高德缓存.
+
+这不是绕过高德检测的能力, 而是 Android mock location 与第三方定位缓存/融合策略之间的正常延迟.
+
 ## 现实边界
 
 本 App 使用 Android 官方 mock location 能力. 当目标 App 使用 `LocationManager` 或 `FusedLocationProviderClient` 获取位置时, 通常可以读取到模拟位置. 如果目标 App 使用 anti-mock 检测, 位置缓存, 服务端校验, 账号风控, IP, Wi-Fi, 蓝牙, 基站或传感器辅助判断, 可能仍显示真实位置或拒绝使用模拟位置.
@@ -204,3 +217,116 @@ Debug APK 构建成功后位于:
 ```text
 app/build/outputs/apk/debug/app-debug.apk
 ```
+
+仓库内同步的测试 APK 位于:
+
+```text
+release/Modify_Positioning-debug.apk
+```
+
+---
+
+# Modify Positioning English README
+
+Modify Positioning is a no-root Android virtual location app. It uses Android's official mock location APIs to continuously inject a selected coordinate into standard system location channels. The project is intended as an Android Location Simulation Lab for development and testing, with predictable behavior, realistic stationary drift, foreground service stability and diagnostics.
+
+Keywords: Android mock location, fake GPS, virtual location, location simulator, GPS spoofing for development, Jetpack Compose, Kotlin, LocationManager, FusedLocationProviderClient, foreground service, no-root location changer, mock GPS app, GPS Network Fused provider diagnostics.
+
+## Features
+
+- No root required: no Magisk, Xposed, LSPosed, app hooking or target app repackaging.
+- One-tap fixed point simulation: select a place on the map and start a foreground service.
+- Realistic stationary drift: the coordinate stays near the target but does not remain perfectly frozen or move in a mechanical circle.
+- Unified simulation layer: `LocationSimulationEngine` generates one `LocationSample` shared by GPS, Network and Fused injection.
+- Multi-provider injection: `AndroidLocationInjector` writes GPS / Network test providers, while `FusedLocationInjector` writes Google Play services Fused mock location.
+- Startup burst: the service injects several samples quickly after startup so standard location consumers can pick up the target faster.
+- Pause keeps location: pause stops movement but continues injecting the current point.
+- Stop cleans up: stop ends the injection loop, removes test providers and disables Fused mock mode.
+- Random walk and route simulation are still supported through the existing domain engines.
+- Travel scenario model includes Los Angeles Classic Day and New York Classic Day presets for future city-trip testing.
+- Diagnostics page shows mock app status, permissions, GPS/Network last known locations, Fused state, recent injection and troubleshooting hints.
+
+## Architecture
+
+```text
+UI / Map selection
+  -> MapPreferencesStore / MockController
+  -> MockLocationService
+      -> LocationSimulationEngine
+          -> LocationSample
+      -> CompositeLocationInjector
+          -> AndroidLocationInjector
+              -> LocationManager GPS_PROVIDER
+              -> LocationManager NETWORK_PROVIDER
+          -> FusedLocationInjector
+              -> FusedLocationProviderClient.setMockLocation
+      -> diagnostics / notification
+```
+
+Only the simulation layer creates realistic movement data: drift, accuracy, speed, bearing and monotonic timestamps. Injectors only initialize providers, enable mock mode, set locations, recover providers and report status. GPS, Network and Fused use the same sample, so they do not fight each other with unrelated coordinates.
+
+## Usage
+
+1. Install and open the app.
+2. Enable Android Developer Options.
+3. Select Modify Positioning as the mock location app.
+4. Grant location permission. Android 13+ also needs notification permission.
+5. Search for a place or drag the map crosshair.
+6. Tap start virtual location.
+7. Open diagnostics and confirm mock app, GPS, Network and Fused status.
+8. Open the target app and verify location behavior.
+
+## Why Amap May Need A Short Warm-Up
+
+Amap may not immediately use the newest mock point. It can read its own last location cache first, then fuse GPS, Network, Fused, Wi-Fi, cell towers, IP, sensors and Amap's own location SDK. If the target is far away from the real device location, Amap may also smooth or delay a large jump.
+
+Recommended flow:
+
+1. Start virtual location in Modify Positioning.
+2. Wait 5-15 seconds, or use diagnostics to confirm GPS / Network / Fused are near the target.
+3. Force stop and reopen Amap, or refresh location inside Amap.
+4. If it keeps returning to the real location, check mock app selection, permissions, battery restrictions and Amap cache.
+
+This is not an anti-detection bypass. It is normal latency between Android mock location and third-party app cache/fusion logic.
+
+## Build
+
+Requirements:
+
+- Android Studio Iguana+
+- JDK 17
+- minSdk 29
+- targetSdk 35
+- Kotlin + Jetpack Compose
+
+Commands:
+
+```bash
+./gradlew test
+./gradlew assembleDebug
+./gradlew installDebug
+```
+
+Debug APK:
+
+```text
+app/build/outputs/apk/debug/app-debug.apk
+```
+
+Repository test APK:
+
+```text
+release/Modify_Positioning-debug.apk
+```
+
+## Limits
+
+This app uses Android's official mock location capability. Apps that use `LocationManager` or `FusedLocationProviderClient` usually can read the simulated location. Apps with anti-mock checks, local caches, server-side validation, account risk control, IP/Wi-Fi/cell-tower checks or sensor fusion may still show the real location or reject mock data.
+
+This project does not implement:
+
+- Hiding `Location.isMock()`.
+- Bypassing WeChat, Amap, Meituan or any third-party app checks.
+- Root, Magisk, KernelSU, Zygisk, LSPosed, Xposed, LSPatch or VirtualXposed.
+- Hooking third-party app internals.
+- Uploading user location or third-party app information.
