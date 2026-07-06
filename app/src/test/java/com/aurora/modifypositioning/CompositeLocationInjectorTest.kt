@@ -4,8 +4,12 @@ import com.aurora.modifypositioning.location.CompositeLocationInjector
 import com.aurora.modifypositioning.location.FusedLocationInjectorCore
 import com.aurora.modifypositioning.location.FusedMockLocation
 import com.aurora.modifypositioning.location.FusedMockLocationClient
+import com.aurora.modifypositioning.location.InjectorState
 import com.aurora.modifypositioning.location.LocationInjector
 import com.aurora.modifypositioning.model.TargetLocation
+import com.aurora.modifypositioning.model.MovementMode
+import com.aurora.modifypositioning.simulation.EnvironmentProfile
+import com.aurora.modifypositioning.simulation.LocationSample
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -55,10 +59,10 @@ class CompositeLocationInjectorTest {
             client = client,
             updateIntervalMs = 60_000L,
             onError = {},
-            elapsedRealtimeNanosProvider = { 0L },
         )
 
         injector.start(TARGET)
+        injector.inject(SAMPLE)
         assertEquals(listOf(true), client.mockModeCalls)
         assertTrue(com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore.state.value.mockModePending)
         assertEquals(false, com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore.state.value.mockModeEnabled)
@@ -85,7 +89,6 @@ class CompositeLocationInjectorTest {
             client = client,
             updateIntervalMs = 60_000L,
             onError = { errors += it },
-            elapsedRealtimeNanosProvider = { 0L },
         )
 
         injector.start(TARGET)
@@ -107,11 +110,11 @@ class CompositeLocationInjectorTest {
             client = client,
             updateIntervalMs = 60_000L,
             onError = { errors += it },
-            elapsedRealtimeNanosProvider = { 0L },
         )
 
         injector.start(TARGET)
         client.completeMockModeSuccess()
+        injector.inject(SAMPLE)
         client.completeLocationFailure(IllegalStateException("location denied"))
 
         val diagnostics = com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore.state.value
@@ -120,6 +123,22 @@ class CompositeLocationInjectorTest {
         assertEquals(null, diagnostics.lastSuccessfulLatitude)
         assertTrue(diagnostics.lastError?.contains("location denied") == true)
         assertTrue(errors.any { it.contains("location denied") })
+    }
+
+    @Test
+    fun aggregateStatus_reportsPartialWhenOneChildFails() {
+        val failing = StatusInjector(InjectorState.FAILED)
+        val healthy = StatusInjector(InjectorState.RUNNING)
+        val composite = CompositeLocationInjector(
+            injectors = listOf(failing, healthy),
+            onError = {},
+        )
+
+        val status = composite.aggregateStatus()
+
+        assertEquals(InjectorState.PARTIAL, status.overallState)
+        assertEquals(1, status.activeCount)
+        assertEquals(1, status.failedCount)
     }
 
     private class RecordingInjector(
@@ -148,6 +167,23 @@ class CompositeLocationInjectorTest {
 
         override fun cleanup() {
             calls += "cleanup"
+        }
+    }
+
+    private class StatusInjector(
+        private val state: InjectorState,
+    ) : LocationInjector {
+        override fun start(target: TargetLocation) = Unit
+        override fun updateTarget(target: TargetLocation) = Unit
+        override fun pause() = Unit
+        override fun stop() = Unit
+
+        override fun status(): com.aurora.modifypositioning.location.InjectorStatus {
+            return com.aurora.modifypositioning.location.InjectorStatus(
+                id = state.name,
+                displayName = state.name,
+                state = state,
+            )
         }
     }
 
@@ -201,6 +237,22 @@ class CompositeLocationInjectorTest {
             name = "target",
             latitude = 30.0,
             longitude = 120.0,
+        )
+        val SAMPLE = LocationSample(
+            latitude = TARGET.latitude,
+            longitude = TARGET.longitude,
+            altitudeMeters = null,
+            accuracyMeters = 5f,
+            verticalAccuracyMeters = 8f,
+            speedMps = 0.2f,
+            speedAccuracyMps = 0.3f,
+            bearingDegrees = 20f,
+            bearingAccuracyDegrees = 8f,
+            timestampMillis = 12_000L,
+            elapsedRealtimeNanos = 45_000L,
+            movementMode = MovementMode.FIXED,
+            environment = EnvironmentProfile.OUTDOOR_OPEN,
+            sourceLabel = "test",
         )
     }
 }

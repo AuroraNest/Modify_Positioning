@@ -5,56 +5,47 @@ import android.content.Context
 import android.location.Criteria
 import android.location.Location
 import android.location.LocationManager
-import android.os.SystemClock
-import com.aurora.modifypositioning.model.ENHANCED_JITTER_RADIUS_METERS
-import com.aurora.modifypositioning.model.ENHANCED_STARTUP_BURST_COUNT
-import com.aurora.modifypositioning.model.ENHANCED_STARTUP_BURST_INTERVAL_MS
 import com.aurora.modifypositioning.model.InjectionReport
 import com.aurora.modifypositioning.model.TargetLocation
+import com.aurora.modifypositioning.simulation.LocationSample
+import com.aurora.modifypositioning.simulation.toGpsLocation
+import com.aurora.modifypositioning.simulation.toNetworkLocation
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.cos
-import kotlin.math.max
 import kotlin.math.sin
 import kotlin.math.sqrt
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 
 @Suppress("DEPRECATION")
 class AndroidLocationInjector(
     context: Context,
-    private val updateIntervalMs: Long,
+    updateIntervalMs: Long,
     private val onError: (String) -> Unit,
     private val onInjected: (InjectionReport) -> Unit,
-) : LocationInjector {
+) : SampledLocationInjector {
 
     private val appContext = context.applicationContext
     private val locationManager = appContext.getSystemService(LocationManager::class.java)
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    private var updateJob: Job? = null
     @Volatile
     private var currentTarget: TargetLocation? = null
     private var providersReady = false
-    private var tick = 0L
-    private var burstRemain = 0
     private var lastProviderRebuildTimeMillis: Long? = null
+    private var state = InjectorState.IDLE
+    private var lastSuccessAtMillis: Long? = null
+    private var lastFailureAtMillis: Long? = null
+    private var lastErrorCode: InjectorErrorCode? = null
+    private var lastErrorMessage: String? = null
+    private var lastInjectedSample: LocationSample? = null
 
     override fun start(target: TargetLocation) {
         updateTarget(target)
         if (currentTarget == null) {
             return
         }
+        state = InjectorState.STARTING
         rebuildProviders()
-        burstRemain = max(burstRemain, ENHANCED_STARTUP_BURST_COUNT)
-        startLoop()
-        inject(target)
+        state = if (providersReady) InjectorState.RUNNING else InjectorState.FAILED
     }
 
     override fun updateTarget(target: TargetLocation) {
@@ -66,40 +57,15 @@ class AndroidLocationInjector(
     }
 
     override fun pause() {
-        updateJob?.cancel()
-        updateJob = null
+        if (state == InjectorState.RUNNING) {
+            state = InjectorState.DEGRADED
+        }
     }
 
     override fun stop() {
-        pause()
         currentTarget = null
         removeProviders()
-        tick = 0L
-        burstRemain = 0
-    }
-
-    private fun startLoop() {
-        updateJob?.cancel()
-        updateJob = scope.launch {
-            while (isActive) {
-                val target = currentTarget
-                if (target == null) {
-                    onError("缺少目标位置")
-                    break
-                }
-                inject(target)
-                delay(nextDelay())
-            }
-        }
-    }
-
-    private fun nextDelay(): Long {
-        return if (burstRemain > 0) {
-            burstRemain -= 1
-            ENHANCED_STARTUP_BURST_INTERVAL_MS
-        } else {
-            updateIntervalMs
-        }
+        state = InjectorState.STOPPED
     }
 
     private fun rebuildProviders() {
@@ -115,75 +81,37 @@ class AndroidLocationInjector(
             manager.setTestProviderEnabled(LocationManager.NETWORK_PROVIDER, true)
             providersReady = true
             lastProviderRebuildTimeMillis = System.currentTimeMillis()
-            resetRecoveryBurst()
+            lastErrorCode = null
+            lastErrorMessage = null
         }.onFailure {
             removeProviders()
-            onError("mock provider 重建失败: ${it.message ?: "未知错误"}")
+            publishFailure(InjectorErrorCode.TEST_PROVIDER_ADD_FAILED, "mock provider 重建失败: ${it.message ?: "未知错误"}")
         }
     }
 
     @SuppressLint("MissingPermission")
-    private fun inject(target: TargetLocation) {
+    override fun inject(sample: LocationSample) {
         val manager = locationManager ?: run {
-            onError("定位服务不可用")
+            publishFailure(InjectorErrorCode.LOCATION_SERVICE_DISABLED, "定位服务不可用")
             return
         }
         if (!providersReady || !isProviderReady(manager, LocationManager.GPS_PROVIDER) || !isProviderReady(manager, LocationManager.NETWORK_PROVIDER)) {
             rebuildProviders()
         }
         if (!providersReady) {
-            onError("mock provider 未就绪或已被移除")
+            publishFailure(InjectorErrorCode.PROVIDER_NOT_READY, "mock provider 未就绪或已被移除")
             return
         }
 
-        val now = System.currentTimeMillis()
-        val nanos = SystemClock.elapsedRealtimeNanos()
-        val point = jitterPoint(target, tick)
-        tick += 1
-
-        val gpsAccuracy = 4f + ((tick % 3).toFloat())
-        val networkAccuracy = 10f + ((tick % 7).toFloat())
-        val mockSpeed = 0.2f + ((tick % 5).toFloat() * 0.12f)
-        val bearing = ((tick * 17L) % 360L).toFloat()
-
-        val gpsLocation = Location(LocationManager.GPS_PROVIDER).apply {
-            latitude = point.first
-            longitude = point.second
-            accuracy = gpsAccuracy
-            time = now
-            elapsedRealtimeNanos = nanos
-            altitude = 0.0
-            speed = mockSpeed
-            this.bearing = bearing
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                verticalAccuracyMeters = 8f
-                speedAccuracyMetersPerSecond = 0.4f
-                bearingAccuracyDegrees = 8f
-            }
-        }
-
-        val networkLocation = Location(LocationManager.NETWORK_PROVIDER).apply {
-            latitude = point.first
-            longitude = point.second
-            accuracy = networkAccuracy
-            time = now
-            elapsedRealtimeNanos = nanos
-            altitude = 0.0
-            speed = mockSpeed
-            this.bearing = bearing
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                verticalAccuracyMeters = 20f
-                speedAccuracyMetersPerSecond = 1.2f
-                bearingAccuracyDegrees = 16f
-            }
-        }
+        val gpsLocation = sample.toGpsLocation()
+        val networkLocation = sample.toNetworkLocation()
 
         runCatching {
             setProviderLocations(manager, gpsLocation, networkLocation)
             val verification = verifyLastKnownLocations(
                 manager = manager,
-                target = target,
-                injectionTimeMillis = now,
+                target = TargetLocation(sample.sourceLabel, sample.latitude, sample.longitude),
+                injectionTimeMillis = sample.timestampMillis,
             )
             val recovery = verification.firstOrNull { it.shouldRecover }
             var reportVerification = verification
@@ -195,10 +123,15 @@ class AndroidLocationInjector(
                 setProviderLocations(manager, gpsLocation, networkLocation)
                 reportVerification = verifyLastKnownLocations(
                     manager = manager,
-                    target = target,
-                    injectionTimeMillis = now,
+                    target = TargetLocation(sample.sourceLabel, sample.latitude, sample.longitude),
+                    injectionTimeMillis = sample.timestampMillis,
                 )
             }
+            state = InjectorState.RUNNING
+            lastSuccessAtMillis = sample.timestampMillis
+            lastErrorCode = null
+            lastErrorMessage = null
+            lastInjectedSample = sample
             onInjected(
                 InjectionReport(
                     provider = LocationManager.GPS_PROVIDER,
@@ -214,7 +147,7 @@ class AndroidLocationInjector(
             )
         }.onFailure {
             rebuildProviders()
-            onError("注入失败: ${it.message ?: "未知错误"}")
+            publishFailure(InjectorErrorCode.TEST_PROVIDER_SET_LOCATION_FAILED, "注入失败: ${it.message ?: "未知错误"}")
         }
     }
 
@@ -255,17 +188,6 @@ class AndroidLocationInjector(
         }.getOrDefault(false)
     }
 
-    private fun jitterPoint(target: TargetLocation, index: Long): Pair<Double, Double> {
-        val angle = (index % 360L).toDouble() * (PI / 180.0)
-        val meters = ENHANCED_JITTER_RADIUS_METERS
-        val latPerMeter = 1.0 / 111_320.0
-        val lonPerMeter = 1.0 / (111_320.0 * cos(target.latitude * (PI / 180.0)).coerceAtLeast(0.2))
-
-        val latOffset = sin(angle) * meters * latPerMeter
-        val lonOffset = cos(angle) * meters * lonPerMeter
-        return (target.latitude + latOffset) to (target.longitude + lonOffset)
-    }
-
     private fun addTestProvider(provider: String) {
         val manager = locationManager ?: return
         val profile = testProviderProfile(provider)
@@ -284,10 +206,6 @@ class AndroidLocationInjector(
         )
     }
 
-    private fun resetRecoveryBurst() {
-        burstRemain = max(burstRemain, RECOVERY_BURST_COUNT)
-    }
-
     private fun removeProviders() {
         val manager = locationManager ?: return
         runCatching { manager.removeTestProvider(LocationManager.GPS_PROVIDER) }
@@ -297,7 +215,27 @@ class AndroidLocationInjector(
 
     override fun cleanup() {
         stop()
-        scope.cancel()
+    }
+
+    override fun status(): InjectorStatus {
+        return InjectorStatus(
+            id = "android-location",
+            displayName = "GPS / Network",
+            state = state,
+            lastSuccessAtMillis = lastSuccessAtMillis,
+            lastFailureAtMillis = lastFailureAtMillis,
+            lastErrorCode = lastErrorCode,
+            lastErrorMessage = lastErrorMessage,
+            lastInjectedSample = lastInjectedSample,
+        )
+    }
+
+    private fun publishFailure(code: InjectorErrorCode, message: String) {
+        state = InjectorState.FAILED
+        lastFailureAtMillis = System.currentTimeMillis()
+        lastErrorCode = code
+        lastErrorMessage = message
+        onError(message)
     }
 
     private fun Location.toVerificationObservation(provider: String): LastKnownObservation {
@@ -319,9 +257,8 @@ class AndroidLocationInjector(
         }
     }
 
-    private companion object {
-        private const val RECOVERY_BURST_COUNT = 8
-    }
+    @Suppress("unused")
+    private val retainedUpdateIntervalMs = updateIntervalMs
 }
 
 internal data class TestProviderProfile(

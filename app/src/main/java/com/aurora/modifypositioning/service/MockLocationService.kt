@@ -25,9 +25,11 @@ import com.aurora.modifypositioning.domain.calibration.MainlandCoordinateCalibra
 import com.aurora.modifypositioning.location.AndroidLocationInjector
 import com.aurora.modifypositioning.location.CompositeLocationInjector
 import com.aurora.modifypositioning.location.FusedLocationInjector
-import com.aurora.modifypositioning.location.LocationInjector
+import com.aurora.modifypositioning.location.SampledLocationInjector
 import com.aurora.modifypositioning.model.CoordinateCalibrationMode
 import com.aurora.modifypositioning.model.DEFAULT_TARGET
+import com.aurora.modifypositioning.model.ENHANCED_STARTUP_BURST_COUNT
+import com.aurora.modifypositioning.model.ENHANCED_STARTUP_BURST_INTERVAL_MS
 import com.aurora.modifypositioning.model.ENHANCED_UPDATE_INTERVAL_MS
 import com.aurora.modifypositioning.model.MockState
 import com.aurora.modifypositioning.model.MovementMode
@@ -37,6 +39,9 @@ import com.aurora.modifypositioning.model.PlannedRoute
 import com.aurora.modifypositioning.model.RouteProgress
 import com.aurora.modifypositioning.model.RandomWalkConfig
 import com.aurora.modifypositioning.model.TargetLocation
+import com.aurora.modifypositioning.model.TravelMode
+import com.aurora.modifypositioning.simulation.EnvironmentProfile
+import com.aurora.modifypositioning.simulation.LocationSimulationEngine
 import com.aurora.modifypositioning.util.MockEnvironmentChecker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -50,7 +55,7 @@ import kotlinx.coroutines.runBlocking
 
 class MockLocationService : Service() {
 
-    private lateinit var injector: LocationInjector
+    private lateinit var injector: SampledLocationInjector
     private val controller = MockControllerStore.instance
     private lateinit var mapPreferencesStore: MapPreferencesStore
     private val coordinateCalibrator = MainlandCoordinateCalibrator()
@@ -60,6 +65,8 @@ class MockLocationService : Service() {
 
     private var randomWalkJob: Job? = null
     private var routeMovementJob: Job? = null
+    private var injectionLoopJob: Job? = null
+    private var simulationEngine: LocationSimulationEngine? = null
     private var explicitStop = false
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -167,11 +174,18 @@ class MockLocationService : Service() {
 
         stopRandomWalkLoop()
         stopRouteMovementLoop()
+        stopInjectionLoop()
 
         val initialInjectTarget = buildInjectTarget(startupPlan.movementStartTarget, calibrationMode)
+        simulationEngine = LocationSimulationEngine(
+            initialTarget = initialInjectTarget,
+            initialMovementMode = startupPlan.movementMode,
+            initialEnvironment = environmentFor(startupPlan.movementMode),
+        )
         injector.start(initialInjectTarget)
         controller.onServiceStarted(startupPlan.movementStartTarget)
         acquireWakeLock()
+        startInjectionLoop()
 
         when (startupPlan.movementMode) {
             MovementMode.RANDOM_WALK -> {
@@ -234,6 +248,7 @@ class MockLocationService : Service() {
         if (cleanupStartedComponents) {
             stopRandomWalkLoop()
             stopRouteMovementLoop()
+            stopInjectionLoop()
             if (::injector.isInitialized) {
                 injector.stop()
             }
@@ -289,6 +304,11 @@ class MockLocationService : Service() {
                         )
                         val injectTarget = buildInjectTarget(displayTarget, calibrationMode)
                         injector.updateTarget(injectTarget)
+                        simulationEngine?.updateTarget(
+                            target = injectTarget,
+                            movementMode = MovementMode.RANDOM_WALK,
+                            environment = environmentFor(MovementMode.RANDOM_WALK),
+                        )
                         controller.updateTarget(displayTarget)
                         controller.onMovementProgress(
                             point = step.point,
@@ -307,6 +327,11 @@ class MockLocationService : Service() {
                         )
                         val injectTarget = buildInjectTarget(displayTarget, calibrationMode)
                         injector.updateTarget(injectTarget)
+                        simulationEngine?.updateTarget(
+                            target = injectTarget,
+                            movementMode = MovementMode.RANDOM_WALK,
+                            environment = environmentFor(MovementMode.RANDOM_WALK),
+                        )
                         controller.updateTarget(displayTarget)
                         controller.onMovementProgress(
                             point = step.point,
@@ -342,7 +367,13 @@ class MockLocationService : Service() {
             latitude = startPoint.lat,
             longitude = startPoint.lng,
         )
-        injector.updateTarget(buildInjectTarget(startTarget, calibrationMode))
+        val injectTarget = buildInjectTarget(startTarget, calibrationMode)
+        injector.updateTarget(injectTarget)
+        simulationEngine?.updateTarget(
+            target = injectTarget,
+            movementMode = plannedRoute.mode.toMovementMode(),
+            environment = EnvironmentProfile.MOVING_VEHICLE,
+        )
         controller.updateTarget(startTarget)
         controller.onRouteSimulationStarted(
             route = plannedRoute,
@@ -385,6 +416,11 @@ class MockLocationService : Service() {
         )
         val injectTarget = buildInjectTarget(displayTarget, calibrationMode)
         injector.updateTarget(injectTarget)
+        simulationEngine?.updateTarget(
+            target = injectTarget,
+            movementMode = controller.movementMode.value,
+            environment = EnvironmentProfile.MOVING_VEHICLE,
+        )
         controller.updateTarget(displayTarget)
         controller.onRouteSimulationProgress(
             point = MovementPoint(
@@ -406,6 +442,46 @@ class MockLocationService : Service() {
     private fun stopRouteMovementLoop() {
         routeMovementJob?.cancel()
         routeMovementJob = null
+    }
+
+    private fun startInjectionLoop() {
+        injectionLoopJob?.cancel()
+        injectionLoopJob = serviceScope.launch {
+            repeat(ENHANCED_STARTUP_BURST_COUNT) {
+                if (!isActive) {
+                    return@launch
+                }
+                injectNextSample()
+                delay(ENHANCED_STARTUP_BURST_INTERVAL_MS)
+            }
+            while (isActive) {
+                injectNextSample()
+                delay(nextSteadyInjectionDelayMillis())
+            }
+        }
+    }
+
+    private fun injectNextSample() {
+        val sample = simulationEngine?.nextSample() ?: run {
+            controller.onError("缺少定位模拟引擎")
+            return
+        }
+        injector.inject(sample)
+    }
+
+    private fun nextSteadyInjectionDelayMillis(): Long {
+        return when (controller.movementMode.value) {
+            MovementMode.FIXED -> 1_500L
+            MovementMode.RANDOM_WALK -> 900L
+            MovementMode.POINT_TO_POINT_NAV,
+            MovementMode.CUSTOM_ROUTE -> 800L
+        }
+    }
+
+    private fun stopInjectionLoop() {
+        injectionLoopJob?.cancel()
+        injectionLoopJob = null
+        simulationEngine = null
     }
 
     private fun buildInjectTarget(
@@ -433,9 +509,6 @@ class MockLocationService : Service() {
             controller.movementMode.value == MovementMode.CUSTOM_ROUTE
         ) {
             controller.onMovementPaused()
-        } else {
-            injector.pause()
-            releaseWakeLock()
         }
         controller.onServicePaused()
         refreshNotification()
@@ -444,6 +517,7 @@ class MockLocationService : Service() {
     private fun handleStop() {
         stopRandomWalkLoop()
         stopRouteMovementLoop()
+        stopInjectionLoop()
         injector.stop()
         releaseWakeLock()
         controller.onServiceStopped()
@@ -461,6 +535,7 @@ class MockLocationService : Service() {
     override fun onDestroy() {
         stopRandomWalkLoop()
         stopRouteMovementLoop()
+        stopInjectionLoop()
         injector.cleanup()
         releaseWakeLock()
         serviceScope.cancel()
@@ -549,6 +624,23 @@ class MockLocationService : Service() {
 
     private fun getPausedContentText(): String {
         return "已暂停移动, 保持当前位置"
+    }
+
+    private fun environmentFor(mode: MovementMode): EnvironmentProfile {
+        return when (mode) {
+            MovementMode.FIXED -> EnvironmentProfile.OUTDOOR_OPEN
+            MovementMode.RANDOM_WALK -> EnvironmentProfile.OUTDOOR_OPEN
+            MovementMode.POINT_TO_POINT_NAV,
+            MovementMode.CUSTOM_ROUTE -> EnvironmentProfile.MOVING_VEHICLE
+        }
+    }
+
+    private fun TravelMode.toMovementMode(): MovementMode {
+        return when (this) {
+            TravelMode.WALK,
+            TravelMode.BIKE,
+            TravelMode.CAR -> MovementMode.POINT_TO_POINT_NAV
+        }
     }
 
     private fun buildNotification(content: String): Notification {
