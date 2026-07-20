@@ -96,6 +96,8 @@ UI / Map selection
 8. 打开诊断页, 刷新并确认 mock app, GPS/Network/Fused 状态.
 9. 打开目标 App 验证定位.
 
+跨国家或地区测试时, 建议搭配可信 VPN, 并让 VPN 出口地区与目标地点大致一致. 微信等 App 可能同时参考 IP 和网络区域; 两者差异过大时, 可能无法定位到目标地址. VPN 只改变网络出口, 不会修改 Android mock location, 也不能保证目标 App 接受模拟位置.
+
 ## 构建
 
 环境:
@@ -195,7 +197,8 @@ AMAP_WEB_API_KEY=your_web_key
 3. 等待 10-30 秒, 让兼容窗口持续推送 GPS / Network / Fused sample.
 4. 在系统应用信息中清除微信或美团的应用缓存, 不需要清除账号数据.
 5. 从最近任务中彻底关闭目标 App, 再重新打开并触发定位.
-6. 如果诊断页显示系统定位已接近目标, 但目标 App 仍回真实位置, 通常是目标 App 自身 cache, server validation, Wi-Fi/IP/基站辅助判断或 anti-mock 策略导致.
+6. 跨国家或地区测试时, 可让可信 VPN 的出口地区与目标地点大致一致后再重试.
+7. 如果诊断页显示系统定位已接近目标, 但目标 App 仍回真实位置, 通常是目标 App 自身 cache, server validation, Wi-Fi/IP/基站辅助判断或 anti-mock 策略导致.
 
 这表示本 App 已在本次测试设备上支持微信, 美团的标准定位链路兼容测试, 不表示所有设备都能得到相同结果, 也不表示可以绕过目标 App 的 mock 检测或风控.
 
