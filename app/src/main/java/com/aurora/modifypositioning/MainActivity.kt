@@ -133,7 +133,10 @@ class MainActivity : ComponentActivity() {
 
             var showOnboarding by rememberSaveable { mutableStateOf(!hasCompletedOnboarding) }
             var isMockAppSelected by remember { mutableStateOf(false) }
-            var missingPermissions by remember { mutableStateOf(emptyList<String>()) }
+            var isSystemLocationEnabled by remember { mutableStateOf(false) }
+            var missingLocationPermissions by remember { mutableStateOf(emptyList<String>()) }
+            var areNotificationsEnabled by remember { mutableStateOf(false) }
+            var isIgnoringBatteryOptimizations by remember { mutableStateOf(false) }
             var screen by rememberSaveable {
                 mutableStateOf(UiScreen.MAP)
             }
@@ -160,7 +163,13 @@ class MainActivity : ComponentActivity() {
 
             fun refreshStatus() {
                 isMockAppSelected = MockEnvironmentChecker.isMockLocationAppSelected(this@MainActivity)
-                missingPermissions = MockEnvironmentChecker.missingPermissions(this@MainActivity)
+                isSystemLocationEnabled = MockEnvironmentChecker.isSystemLocationEnabled(this@MainActivity)
+                missingLocationPermissions =
+                    MockEnvironmentChecker.missingLocationPermissions(this@MainActivity)
+                areNotificationsEnabled =
+                    MockEnvironmentChecker.areNotificationsEnabled(this@MainActivity)
+                isIgnoringBatteryOptimizations =
+                    MockEnvironmentChecker.isIgnoringBatteryOptimizations(this@MainActivity)
             }
 
             fun refreshDiagnostics() {
@@ -184,9 +193,15 @@ class MainActivity : ComponentActivity() {
 
             fun startMock(mode: MovementMode) {
                 refreshStatus()
-                if (missingPermissions.isNotEmpty()) {
-                    controller.onError("缺少权限，请完成授权")
-                    Toast.makeText(this@MainActivity, "启动失败：缺少权限", Toast.LENGTH_SHORT).show()
+                if (missingLocationPermissions.isNotEmpty()) {
+                    controller.onError("缺少权限, 请完成授权")
+                    Toast.makeText(this@MainActivity, "启动失败: 缺少权限", Toast.LENGTH_SHORT).show()
+                    return
+                }
+                if (!isSystemLocationEnabled) {
+                    controller.onError("请先开启系统定位服务")
+                    showOnboarding = true
+                    Toast.makeText(this@MainActivity, "启动失败: 系统定位未开启", Toast.LENGTH_SHORT).show()
                     return
                 }
                 if (!isMockAppSelected) {
@@ -194,7 +209,7 @@ class MainActivity : ComponentActivity() {
                     showOnboarding = true
                     Toast.makeText(
                         this@MainActivity,
-                        "启动失败：请先设置模拟位置信息应用",
+                        "启动失败: 请先设置模拟位置信息应用",
                         Toast.LENGTH_SHORT,
                     ).show()
                     return
@@ -268,18 +283,26 @@ class MainActivity : ComponentActivity() {
                 if (showOnboarding) {
                     OnboardingScreen(
                         isMockAppSelected = isMockAppSelected,
-                        missingPermissions = missingPermissions,
+                        isSystemLocationEnabled = isSystemLocationEnabled,
+                        missingLocationPermissions = missingLocationPermissions,
+                        areNotificationsEnabled = areNotificationsEnabled,
+                        isIgnoringBatteryOptimizations = isIgnoringBatteryOptimizations,
                         onOpenDeveloperOptions = { openDeveloperOptions() },
+                        onOpenLocationSettings = { openLocationSettings() },
                         onOpenAppSettings = { openAppDetailSettings() },
+                        onOpenNotificationSettings = { openNotificationSettings() },
+                        onOpenBatterySettings = { openBatteryOptimizationSettings() },
                         onRefreshStatus = {
                             refreshStatus()
                             refreshDiagnostics()
                         },
                         onContinue = {
                             refreshStatus()
-                            if (missingPermissions.isNotEmpty()) {
-                                permissionLauncher.launch(missingPermissions.toTypedArray())
+                            if (missingLocationPermissions.isNotEmpty()) {
+                                permissionLauncher.launch(missingLocationPermissions.toTypedArray())
                                 controller.onError("请先授予定位权限")
+                            } else if (!isSystemLocationEnabled) {
+                                controller.onError("请先开启系统定位服务")
                             } else if (!isMockAppSelected) {
                                 controller.onError("请先在开发者选项中设置模拟位置信息应用")
                             } else {
@@ -434,11 +457,26 @@ class MainActivity : ComponentActivity() {
             }
     }
 
+    private fun openLocationSettings() {
+        startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+    }
+
     private fun openAppDetailSettings() {
         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
             data = android.net.Uri.parse("package:$packageName")
         }
         startActivity(intent)
+    }
+
+    private fun openNotificationSettings() {
+        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+            putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        }
+        startActivity(intent)
+    }
+
+    private fun openBatteryOptimizationSettings() {
+        startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
     }
 
     companion object {

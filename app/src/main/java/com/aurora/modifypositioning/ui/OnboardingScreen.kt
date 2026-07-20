@@ -31,13 +31,25 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun OnboardingScreen(
     isMockAppSelected: Boolean,
-    missingPermissions: List<String>,
+    isSystemLocationEnabled: Boolean,
+    missingLocationPermissions: List<String>,
+    areNotificationsEnabled: Boolean,
+    isIgnoringBatteryOptimizations: Boolean,
     onOpenDeveloperOptions: () -> Unit,
+    onOpenLocationSettings: () -> Unit,
     onOpenAppSettings: () -> Unit,
+    onOpenNotificationSettings: () -> Unit,
+    onOpenBatterySettings: () -> Unit,
     onRefreshStatus: () -> Unit,
     onContinue: () -> Unit,
 ) {
-    val permissionsReady = missingPermissions.isEmpty()
+    val locationPermissionsReady = missingLocationPermissions.isEmpty()
+    val requiredReady = onboardingRequiredStepsReady(
+        isMockAppSelected = isMockAppSelected,
+        isSystemLocationEnabled = isSystemLocationEnabled,
+        missingLocationPermissions = missingLocationPermissions,
+    )
+    val recommendedReady = areNotificationsEnabled && isIgnoringBatteryOptimizations
     val background = Brush.verticalGradient(
         colors = listOf(Color(0xFFF2F2F7), Color(0xFFF7F7FA)),
     )
@@ -71,7 +83,7 @@ fun OnboardingScreen(
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "完成系统授权后, 进入地图选点并启动虚拟定位.",
+                        text = "完成 3 项必需设置后, 即可进入地图并启动虚拟定位.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -85,34 +97,82 @@ fun OnboardingScreen(
                             modifier = Modifier.weight(1f),
                         )
                         ReadinessChip(
-                            label = "定位权限",
-                            ready = permissionsReady,
+                            label = "系统定位",
+                            ready = isSystemLocationEnabled,
+                            modifier = Modifier.weight(1f),
+                        )
+                        ReadinessChip(
+                            label = "精确位置",
+                            ready = locationPermissionsReady,
                             modifier = Modifier.weight(1f),
                         )
                     }
                 }
             }
 
+            Text(
+                text = "必须完成",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.SemiBold,
+            )
+
             SetupStepCard(
                 title = "选择模拟位置 App",
                 status = if (isMockAppSelected) "已设置为本 App" else "尚未设置",
-                detail = "开发者选项 / 模拟位置信息应用 / Modify Positioning",
+                detail = "若没有开发者选项, 先在关于手机连续点击系统版本或版本号 7 次. 然后选择模拟位置信息应用 / Modify Positioning.",
                 ready = isMockAppSelected,
                 actionLabel = "打开开发者选项",
                 onAction = onOpenDeveloperOptions,
             )
 
             SetupStepCard(
-                title = "授予定位权限",
-                status = if (permissionsReady) {
-                    "权限已满足"
+                title = "开启系统定位",
+                status = if (isSystemLocationEnabled) "系统定位已开启" else "系统定位已关闭",
+                detail = "目标 App 需要通过系统定位服务读取 GPS / Network / Fused 位置.",
+                ready = isSystemLocationEnabled,
+                actionLabel = "打开定位设置",
+                onAction = onOpenLocationSettings,
+            )
+
+            SetupStepCard(
+                title = "允许精确位置",
+                status = if (locationPermissionsReady) {
+                    "精确位置权限已允许"
                 } else {
-                    "缺少: ${missingPermissions.joinToString()}"
+                    "尚未授予定位权限"
                 },
-                detail = "允许位置权限后, 后台服务才能持续注入定位.",
-                ready = permissionsReady,
-                actionLabel = "打开应用权限页",
+                detail = "在应用权限中允许定位, 并开启使用精确位置.",
+                ready = locationPermissionsReady,
+                actionLabel = "打开权限设置",
                 onAction = onOpenAppSettings,
+            )
+
+            Text(
+                text = "建议设置",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.SemiBold,
+            )
+
+            SetupStepCard(
+                title = "显示运行通知",
+                status = if (areNotificationsEnabled) "通知已开启" else "通知未开启",
+                detail = "用于查看持续定位状态和前台服务提示. 不开启也不会阻止定位.",
+                ready = areNotificationsEnabled,
+                required = false,
+                actionLabel = "打开通知设置",
+                onAction = onOpenNotificationSettings,
+            )
+
+            SetupStepCard(
+                title = "放宽电池限制",
+                status = if (isIgnoringBatteryOptimizations) "电池限制已放宽" else "仍受系统电池优化",
+                detail = "长时间运行或切换到微信, 美团后容易被清理时, 建议设为不限制.",
+                ready = isIgnoringBatteryOptimizations,
+                required = false,
+                actionLabel = "打开电池设置",
+                onAction = onOpenBatterySettings,
             )
 
             Card(
@@ -134,10 +194,14 @@ fun OnboardingScreen(
                     ) {
                         Text("检测状态", style = MaterialTheme.typography.titleSmall)
                         Text(
-                            text = if (isMockAppSelected && permissionsReady) {
-                                "已准备好进入控制台"
+                            text = if (requiredReady) {
+                                if (recommendedReady) {
+                                    "全部设置已完成"
+                                } else {
+                                    "必需项已完成, 建议项可稍后设置"
+                                }
                             } else {
-                                "完成上方项目后刷新一次"
+                                "完成 3 项必需设置后刷新"
                             },
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall,
@@ -151,13 +215,13 @@ fun OnboardingScreen(
 
             Button(
                 onClick = onContinue,
-                enabled = !permissionsReady || isMockAppSelected,
+                enabled = !locationPermissionsReady || requiredReady,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("onboarding_continue"),
                 shape = RoundedCornerShape(8.dp),
             ) {
-                Text(if (permissionsReady) "进入地图控制台" else "授予定位权限")
+                Text(if (locationPermissionsReady) "进入地图控制台" else "授予精确位置权限")
             }
         }
     }
@@ -195,6 +259,7 @@ private fun SetupStepCard(
     status: String,
     detail: String,
     ready: Boolean,
+    required: Boolean = true,
     actionLabel: String,
     onAction: () -> Unit,
 ) {
@@ -220,7 +285,7 @@ private fun SetupStepCard(
                     Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(status, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                StatusBadge(ready = ready)
+                StatusBadge(ready = ready, required = required)
             }
             Text(
                 text = detail,
@@ -237,17 +302,37 @@ private fun SetupStepCard(
 }
 
 @Composable
-private fun StatusBadge(ready: Boolean) {
+private fun StatusBadge(ready: Boolean, required: Boolean) {
     Surface(
         shape = RoundedCornerShape(8.dp),
-        color = if (ready) Color(0xFFE1F7EC) else Color(0xFFFFF3D7),
+        color = when {
+            ready -> Color(0xFFE1F7EC)
+            required -> Color(0xFFFFF3D7)
+            else -> Color(0xFFE8F0FE)
+        },
     ) {
         Text(
-            text = if (ready) "OK" else "待配置",
+            text = when {
+                ready -> "OK"
+                required -> "待配置"
+                else -> "建议开启"
+            },
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            color = if (ready) Color(0xFF146C43) else Color(0xFF7A4A00),
+            color = when {
+                ready -> Color(0xFF146C43)
+                required -> Color(0xFF7A4A00)
+                else -> Color(0xFF2457A6)
+            },
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
         )
     }
+}
+
+internal fun onboardingRequiredStepsReady(
+    isMockAppSelected: Boolean,
+    isSystemLocationEnabled: Boolean,
+    missingLocationPermissions: List<String>,
+): Boolean {
+    return isMockAppSelected && isSystemLocationEnabled && missingLocationPermissions.isEmpty()
 }

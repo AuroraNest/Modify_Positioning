@@ -131,10 +131,19 @@ class MockLocationService : Service() {
     private fun handleStart() {
         startForeground(NOTIFICATION_ID, buildNotification(getRunningContentText()))
 
-        val missingPermissions = MockEnvironmentChecker.missingPermissions(this)
+        val missingPermissions = MockEnvironmentChecker.missingLocationPermissions(this)
         if (missingPermissions.isNotEmpty()) {
             failStartup(
                 message = "缺少权限: ${missingPermissions.joinToString()}",
+                cleanupStartedComponents = true,
+                stopService = true,
+            )
+            return
+        }
+
+        if (!MockEnvironmentChecker.isSystemLocationEnabled(this)) {
+            failStartup(
+                message = "请先开启系统定位服务",
                 cleanupStartedComponents = true,
                 stopService = true,
             )

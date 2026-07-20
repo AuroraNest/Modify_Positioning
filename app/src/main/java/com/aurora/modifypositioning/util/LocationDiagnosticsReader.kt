@@ -40,7 +40,7 @@ object LocationDiagnosticsReader {
         injectorStatus: CompositeInjectorStatus,
         injectorWarning: String?,
     ): DiagnosticSnapshot {
-        val missingPermissions = MockEnvironmentChecker.missingPermissions(context)
+        val missingPermissions = MockEnvironmentChecker.missingLocationPermissions(context)
         val manager = context.getSystemService(LocationManager::class.java)
 
         val gpsEnabled = runCatching { manager?.isProviderEnabled(LocationManager.GPS_PROVIDER) ?: false }

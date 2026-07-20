@@ -87,13 +87,14 @@ UI / Map selection
 ## 使用步骤
 
 1. 安装并打开 App.
-2. 打开 Android 开发者选项.
-3. 将 Modify Positioning 设为 "模拟位置信息应用".
-4. 授予定位权限, Android 13+ 还需要通知权限.
-5. 在地图页拖动十字准星或搜索地点.
-6. 点击开始虚拟定位.
-7. 打开诊断页, 刷新并确认 mock app, GPS/Network/Fused 状态.
-8. 打开目标 App 验证定位.
+2. 打开 Android 开发者选项, 将 Modify Positioning 设为 "模拟位置信息应用".
+3. 开启系统定位服务.
+4. 授予定位权限并允许精确位置.
+5. 可选: 开启运行通知; 长时间运行时可在系统电池设置中将本 App 设为不限制.
+6. 在地图页拖动十字准星或搜索地点.
+7. 点击开始虚拟定位.
+8. 打开诊断页, 刷新并确认 mock app, GPS/Network/Fused 状态.
+9. 打开目标 App 验证定位.
 
 ## 构建
 
@@ -151,7 +152,7 @@ AMAP_WEB_API_KEY=your_web_key
 诊断页用于判断系统标准定位链路是否已经接近目标点:
 
 - Mock app 是否已选择.
-- 定位权限和通知权限是否完整.
+- 精确定位权限是否完整; 通知权限仅作为运行状态提示, 不阻断定位.
 - GPS 和 Network provider 是否开启.
 - 最近注入坐标, 精度, 时间和验证距离.
 - GPS last known 和 Network last known 是否接近注入目标.
