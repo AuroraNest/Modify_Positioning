@@ -6,8 +6,10 @@ import android.location.Location
 import android.location.LocationManager
 import android.os.Build
 import com.aurora.modifypositioning.data.MapPreferencesStore
+import com.aurora.modifypositioning.location.CompositeInjectorStatus
 import com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore
 import com.aurora.modifypositioning.location.distanceMeters
+import com.aurora.modifypositioning.model.DiagnosticInjectorStatus
 import com.aurora.modifypositioning.model.DiagnosticLocation
 import com.aurora.modifypositioning.model.DiagnosticSnapshot
 import com.aurora.modifypositioning.model.InjectionReport
@@ -35,6 +37,8 @@ object LocationDiagnosticsReader {
         travelMode: TravelMode?,
         routeProgress: RouteProgress?,
         mapPreferencesStore: MapPreferencesStore,
+        injectorStatus: CompositeInjectorStatus,
+        injectorWarning: String?,
     ): DiagnosticSnapshot {
         val missingPermissions = MockEnvironmentChecker.missingPermissions(context)
         val manager = context.getSystemService(LocationManager::class.java)
@@ -57,9 +61,18 @@ object LocationDiagnosticsReader {
 
         val calibrationMode = runBlocking { mapPreferencesStore.getCalibrationMode() }
         val fused = FusedLocationDiagnosticsStore.state.value
+        val packageInfo = runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0)
+        }.getOrNull()
 
         return DiagnosticSnapshot(
             generatedAtMillis = System.currentTimeMillis(),
+            deviceManufacturer = Build.MANUFACTURER,
+            deviceModel = Build.MODEL,
+            androidVersion = Build.VERSION.RELEASE,
+            androidApiLevel = Build.VERSION.SDK_INT,
+            appVersionName = packageInfo?.versionName ?: "unknown",
+            appVersionCode = packageInfo?.longVersionCode ?: 0L,
             isMockAppSelected = MockEnvironmentChecker.isMockLocationAppSelected(context),
             missingPermissions = missingPermissions,
             gpsEnabled = gpsEnabled,
@@ -74,6 +87,20 @@ object LocationDiagnosticsReader {
             fusedLastSuccessfulLatitude = fused.lastSuccessfulLatitude,
             fusedLastSuccessfulLongitude = fused.lastSuccessfulLongitude,
             fusedLastError = fused.lastError,
+            injectorOverallState = injectorStatus.overallState,
+            injectorActiveCount = injectorStatus.activeCount,
+            injectorFailedCount = injectorStatus.failedCount,
+            injectorStatuses = injectorStatus.statuses.map { status ->
+                DiagnosticInjectorStatus(
+                    id = status.id,
+                    displayName = status.displayName,
+                    state = status.state,
+                    lastSuccessAtMillis = status.lastSuccessAtMillis,
+                    lastFailureAtMillis = status.lastFailureAtMillis,
+                    lastErrorCode = status.lastErrorCode?.name,
+                )
+            },
+            injectorWarning = injectorWarning,
             appState = state,
             lastInjection = lastInjection,
             movementMode = movementMode,

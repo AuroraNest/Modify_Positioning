@@ -15,9 +15,10 @@ Modify Positioning 是一个无 Root Android 虚拟定位 App, 使用 Android �
 - 第三方 App 兼容测试: 启动后前 60 秒保持高频注入, 面向微信, 美团, 高德等使用系统定位链路的 App 做兼容测试.
 - Pause 保持当前位置: 暂停只停止移动, 不释放 provider, 继续保持当前位置注入.
 - Stop 完全清理: 停止会关闭注入循环, 清理 test provider, 并关闭 Fused mock mode.
-- 随机步行和路线模拟: 继续保留现有 `RandomWalkEngine` 和 `RouteSimulationEngine`, 由 service 统一生成最终 sample.
+- 随机步行和路线模拟: sample 跟随 domain engine 的目标点, 实际非负速度和连续路径 bearing; 暂停, 边界和终点会归零速度并清除 moving bearing.
+- 通道级容错: GPS/Network 或 Fused 单通道失败时继续运行健康通道并显示 partial warning; 全部失败才进入 Error, 健康恢复后清除 warning.
 - 旅行剧本模型: 内置 Los Angeles Classic Day 和 New York Classic Day preset, 用于后续旅行/城市测试模板.
-- 诊断页: 显示 mock app, 权限, GPS/Network last known, Fused mock mode, 最近注入, provider 重建和第三方 App 排查建议.
+- 诊断页: 显示设备厂商/型号, Android/API, App 版本, overall/per-injector 状态, mock app, 权限, last known 和 Fused 状态.
 - OSM 默认地图: 默认使用 OSM/Nominatim/Photon, 高德地图和高德 Web Key 是高级可选项.
 
 ## 架构
@@ -68,7 +69,7 @@ UI / Map selection
 - `AndroidLocationInjector` 不再生成 jitter, tick, speed 或 bearing.
 - `FusedLocationInjector` 在 mock mode 成功前缓存最新 sample, 成功后立即补注入.
 - Android 侧诊断发现疑似真实定位覆盖时, 会追加短 recovery burst.
-- Fused 失败不会让 GPS/Network 停止, 由 `CompositeLocationInjector` 聚合 partial 状态.
+- Fused 失败不会让 GPS/Network 停止, `CompositeLocationInjector` 会聚合为 `PARTIAL`; 所有通道失败才是 `FAILED`, 后续周期注入会同步恢复状态.
 
 ### 旅行剧本 preset
 
@@ -156,7 +157,10 @@ AMAP_WEB_API_KEY=your_web_key
 - GPS last known 和 Network last known 是否接近注入目标.
 - Fused mock mode 是否开启, 是否 pending, 最近注入是否成功.
 - provider 是否被系统移除并触发 rebuild.
+- overall/per-injector 状态, partial warning, 设备与 App 版本信息.
 - 第三方 App 不生效时的排查建议.
+
+诊断正常只说明本机标准 Android 定位链路工作正常. 未经对应设备和目标 App 的实际验证, 不代表任何第三方 App 已采用或接受这些 sample.
 
 第三方 App 不生效时, 先按这个顺序排查:
 
@@ -183,15 +187,16 @@ AMAP_WEB_API_KEY=your_web_key
 
 ### 微信, 美团等 App 兼容测试
 
-当前实现会尽量让遵循 Android 标准 `LocationManager` / `FusedLocationProviderClient` 的 App 读取到虚拟地点. 对微信, 美团, 高德等 App, 建议使用这个测试流程:
+本次真机验证中, 微信和美团均已实际请求系统标准 GPS / Network 定位通道, 可以配合本 App 进行虚拟定位测试. 不同机型, 系统版本和目标 App 版本的缓存与融合策略不同, 建议使用这个流程:
 
 1. 先在系统开发者选项中确认 Modify Positioning 是 mock location app.
 2. 在 Modify Positioning 里选择目标地点并开始虚拟定位.
-3. 等待 10-30 秒, 让第三方 App 兼容窗口持续推送 GPS / Network / Fused sample.
-4. 强制停止并重新打开微信, 美团或高德, 再触发定位.
-5. 如果诊断页显示系统定位已接近目标, 但目标 App 仍回真实位置, 通常是目标 App 自身 cache, server validation, Wi-Fi/IP/基站辅助判断或 anti-mock 策略导致.
+3. 等待 10-30 秒, 让兼容窗口持续推送 GPS / Network / Fused sample.
+4. 在系统应用信息中清除微信或美团的应用缓存, 不需要清除账号数据.
+5. 从最近任务中彻底关闭目标 App, 再重新打开并触发定位.
+6. 如果诊断页显示系统定位已接近目标, 但目标 App 仍回真实位置, 通常是目标 App 自身 cache, server validation, Wi-Fi/IP/基站辅助判断或 anti-mock 策略导致.
 
-这表示本 App 支持微信, 美团等 App 的标准定位链路兼容测试, 不表示保证绕过它们的 mock 检测或风控.
+这表示本 App 已在本次测试设备上支持微信, 美团的标准定位链路兼容测试, 不表示所有设备都能得到相同结果, 也不表示可以绕过目标 App 的 mock 检测或风控.
 
 ## 现实边界
 
@@ -258,9 +263,10 @@ Keywords: Android mock location, fake GPS, virtual location, location simulator,
 - Third-party app compatibility testing: the first 60 seconds use higher frequency injection for apps such as WeChat, Meituan and Amap when they consume standard Android location APIs.
 - Pause keeps location: pause stops movement but continues injecting the current point.
 - Stop cleans up: stop ends the injection loop, removes test providers and disables Fused mock mode.
-- Random walk and route simulation are still supported through the existing domain engines.
+- Moving samples follow domain-engine targets with their actual non-negative speed and consecutive-path bearing. Pause, boundary and destination states clear moving speed and bearing.
+- Provider health is channel-aware: one failed channel keeps healthy channels running with a partial warning; all failed channels enter Error; recovery clears the warning.
 - Travel scenario model includes Los Angeles Classic Day and New York Classic Day presets for future city-trip testing.
-- Diagnostics page shows mock app status, permissions, GPS/Network last known locations, Fused state, recent injection and troubleshooting hints.
+- Diagnostics show device manufacturer/model, Android/API, app version, overall/per-injector health, permissions, last known locations and Fused state.
 
 ## Architecture
 
@@ -350,6 +356,8 @@ release/Modify_Positioning-debug.apk
 ## Limits
 
 This app uses Android's official mock location capability. Apps that use `LocationManager` or `FusedLocationProviderClient` usually can read the simulated location. Apps with anti-mock checks, local caches, server-side validation, account risk control, IP/Wi-Fi/cell-tower checks or sensor fusion may still show the real location or reject mock data.
+
+A healthy diagnostic report confirms only the standard Android location path on the tested device. It is not evidence that any specific third-party app has adopted or accepted the samples without direct device testing.
 
 This project does not implement:
 

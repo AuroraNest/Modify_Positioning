@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -650,14 +651,26 @@ private fun CommandDock(
         ) {
             Button(
                 onClick = onStart,
-                modifier = Modifier.weight(1.4f),
+                modifier = Modifier
+                    .weight(1.4f)
+                    .testTag("map_start"),
                 shape = RoundedCornerShape(8.dp),
             ) {
-                Text(if (appState == MockState.Running) "重新锁定" else "开始虚拟定位")
+                Text(
+                    when (appState) {
+                        MockState.Idle -> "开始虚拟定位"
+                        MockState.Running -> "重新锁定"
+                        MockState.Paused -> "继续虚拟定位"
+                        is MockState.Error -> "重试虚拟定位"
+                    },
+                )
             }
             FilledTonalButton(
                 onClick = onPause,
-                modifier = Modifier.weight(1f),
+                enabled = appState == MockState.Running,
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("map_pause"),
                 shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.filledTonalButtonColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -668,7 +681,10 @@ private fun CommandDock(
             }
             OutlinedButton(
                 onClick = onStop,
-                modifier = Modifier.weight(0.85f),
+                enabled = appState != MockState.Idle,
+                modifier = Modifier
+                    .weight(0.85f)
+                    .testTag("map_stop"),
                 shape = RoundedCornerShape(8.dp),
             ) {
                 Text("停止")
@@ -679,13 +695,28 @@ private fun CommandDock(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            TextButton(onClick = onOpenMovement, modifier = Modifier.weight(1f)) {
+            TextButton(
+                onClick = onOpenMovement,
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("nav_movement"),
+            ) {
                 Text("路线")
             }
-            TextButton(onClick = onOpenDiagnostic, modifier = Modifier.weight(1f)) {
+            TextButton(
+                onClick = onOpenDiagnostic,
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("nav_diagnostic"),
+            ) {
                 Text("诊断")
             }
-            TextButton(onClick = onOpenGuide, modifier = Modifier.weight(1f)) {
+            TextButton(
+                onClick = onOpenGuide,
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("nav_onboarding"),
+            ) {
                 Text("设置")
             }
         }

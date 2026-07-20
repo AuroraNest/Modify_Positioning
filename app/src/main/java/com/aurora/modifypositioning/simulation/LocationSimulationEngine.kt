@@ -15,16 +15,28 @@ class LocationSimulationEngine(
     private var environment = initialEnvironment
     private var previousSample: LocationSample? = null
     private var previousAccuracyMeters: Float? = null
+    private var motionSpeedMps = 0.0
+    private var motionBearingDegrees: Double? = null
 
     @Synchronized
     fun updateTarget(
         target: TargetLocation,
         movementMode: MovementMode = this.movementMode,
         environment: EnvironmentProfile = this.environment,
+        speedMps: Double = 0.0,
+        bearingDegrees: Double? = null,
     ) {
         this.target = target
         this.movementMode = movementMode
         this.environment = environment
+        motionSpeedMps = speedMps.coerceAtLeast(0.0)
+        motionBearingDegrees = bearingDegrees.takeIf { motionSpeedMps > 0.0 }
+    }
+
+    @Synchronized
+    fun stopMotion() {
+        motionSpeedMps = 0.0
+        motionBearingDegrees = null
     }
 
     @Synchronized
@@ -38,6 +50,8 @@ class LocationSimulationEngine(
             timestampMillis = clock.nextWallTimeMillis(),
             elapsedRealtimeNanos = clock.nextElapsedRealtimeNanos(),
             sourceLabel = sourceLabel,
+            motionSpeedMps = motionSpeedMps,
+            motionBearingDegrees = motionBearingDegrees,
         )
         previousSample = sample
         previousAccuracyMeters = sample.accuracyMeters

@@ -1,5 +1,6 @@
 package com.aurora.modifypositioning.model
 
+import com.aurora.modifypositioning.location.InjectorState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -44,6 +45,18 @@ fun DiagnosticSnapshot.toDiagnosticVerdict(): DiagnosticVerdict {
         )
     }
 
+    if (injectorOverallState == InjectorState.FAILED) {
+        return DiagnosticVerdict(
+            status = DiagnosticVerdictStatus.Blocked,
+            title = "定位通道全部失败",
+            blockers = listOf("GPS / Network 和 Fused 均未保持运行"),
+            possibleCauses = injectorStatuses
+                .filter { it.state == InjectorState.FAILED }
+                .map { "${it.displayName}: ${it.lastErrorCode ?: "未知错误"}" },
+            nextSteps = listOf("确认本应用仍是模拟位置信息应用", "停止后重新开始模拟", "刷新诊断确认通道恢复"),
+        )
+    }
+
     if (appState != MockState.Running && appState != MockState.Paused) {
         return DiagnosticVerdict(
             status = DiagnosticVerdictStatus.Blocked,
@@ -51,6 +64,21 @@ fun DiagnosticSnapshot.toDiagnosticVerdict(): DiagnosticVerdict {
             blockers = listOf("前台定位模拟服务当前未运行"),
             possibleCauses = emptyList(),
             nextSteps = listOf("先在控制台开始模拟", "若启动失败, 检查路线是否已规划并确认"),
+        )
+    }
+
+    if (
+        injectorOverallState == InjectorState.PARTIAL ||
+        injectorOverallState == InjectorState.DEGRADED
+    ) {
+        return DiagnosticVerdict(
+            status = DiagnosticVerdictStatus.Warning,
+            title = "部分定位通道不可用",
+            blockers = emptyList(),
+            possibleCauses = injectorStatuses
+                .filter { it.state != InjectorState.RUNNING }
+                .map { "${it.displayName}: ${it.state}${it.lastErrorCode?.let { code -> " / $code" } ?: ""}" },
+            nextSteps = listOf("可继续使用仍在运行的标准定位通道", "刷新诊断确认故障通道是否恢复"),
         )
     }
 
@@ -150,6 +178,9 @@ fun DiagnosticSnapshot.toCopyableDiagnosticReport(): String {
         appendLine("结论: ${verdict.title} (${verdict.status})")
         appendLine()
         appendLine("系统环境")
+        appendLine("- device: $deviceManufacturer $deviceModel")
+        appendLine("- Android: $androidVersion (API $androidApiLevel)")
+        appendLine("- appVersion: $appVersionName ($appVersionCode)")
         appendLine("- 模拟位置信息应用: ${if (isMockAppSelected) "已设置" else "未设置"}")
         appendLine("- 权限: ${if (missingPermissions.isEmpty()) "完整" else missingPermissions.joinToString()}")
         appendLine("- GPS: ${if (gpsEnabled) "开启" else "关闭"}")
@@ -164,6 +195,15 @@ fun DiagnosticSnapshot.toCopyableDiagnosticReport(): String {
         appendLine("- routeProgress: ${routeProgressPercent?.let { "${"%.1f".format(it)}%" } ?: "-"}")
         appendLine()
         appendLine("注入状态")
+        appendLine("- injectorOverall: $injectorOverallState")
+        appendLine("- injectorChannels: active=$injectorActiveCount, failed=$injectorFailedCount")
+        appendLine("- injectorWarning: ${injectorWarning ?: "-"}")
+        injectorStatuses.forEach { status ->
+            appendLine(
+                "- ${status.displayName}: ${status.state}, lastSuccess=${status.lastSuccessAtMillis?.let(::formatTime) ?: "-"}, " +
+                    "lastFailure=${status.lastFailureAtMillis?.let(::formatTime) ?: "-"}, errorCode=${status.lastErrorCode ?: "-"}",
+            )
+        }
         appendLine("- lastInjection: ${lastInjection?.let { "${it.provider} ${it.latitude},${it.longitude} @ ${formatTime(it.timeMillis)}" } ?: "-"}")
         appendLine("- fusedAvailable: $fusedAvailable")
         appendLine("- fusedMockModeEnabled: $fusedMockModeEnabled")

@@ -1,6 +1,8 @@
 package com.aurora.modifypositioning
 
+import com.aurora.modifypositioning.location.InjectorState
 import com.aurora.modifypositioning.model.CoordinateCalibrationMode
+import com.aurora.modifypositioning.model.DiagnosticInjectorStatus
 import com.aurora.modifypositioning.model.DiagnosticLocation
 import com.aurora.modifypositioning.model.DiagnosticSnapshot
 import com.aurora.modifypositioning.model.DiagnosticVerdictStatus
@@ -36,6 +38,25 @@ class DiagnosticVerdictTest {
 
         assertEquals(DiagnosticVerdictStatus.Warning, verdict.status)
         assertEquals("正在等待 Fused 回调", verdict.title)
+    }
+
+    @Test
+    fun verdict_blocksFailedInjectors_beforeServiceFallbackVerdict() {
+        val verdict = snapshot(
+            injectorOverallState = InjectorState.FAILED,
+            appState = MockState.Error("all failed"),
+        ).toDiagnosticVerdict()
+
+        assertEquals(DiagnosticVerdictStatus.Blocked, verdict.status)
+        assertEquals("定位通道全部失败", verdict.title)
+    }
+
+    @Test
+    fun verdict_warnsWhenOnlySomeInjectorsRun() {
+        val verdict = snapshot(injectorOverallState = InjectorState.PARTIAL).toDiagnosticVerdict()
+
+        assertEquals(DiagnosticVerdictStatus.Warning, verdict.status)
+        assertEquals("部分定位通道不可用", verdict.title)
     }
 
     @Test
@@ -83,6 +104,8 @@ class DiagnosticVerdictTest {
 
         assertTrue(report.contains("Modify Positioning 诊断报告"))
         assertTrue(report.contains("结论: 系统注入看起来正常"))
+        assertTrue(report.contains("device: Aurora Test Device"))
+        assertTrue(report.contains("injectorOverall: RUNNING"))
         assertTrue(report.contains("fusedMockModePending: false"))
         assertTrue(report.contains("fusedLastSuccessful: 31.0,121.0"))
     }
@@ -97,9 +120,28 @@ class DiagnosticVerdictTest {
         fusedLastInjectionPending: Boolean = false,
         fusedLastInjectionTimeMillis: Long? = NOW - 1_000L,
         fusedLastError: String? = null,
+        injectorOverallState: InjectorState = InjectorState.RUNNING,
+        appState: MockState = MockState.Running,
     ): DiagnosticSnapshot {
+        val injectorStatuses = if (injectorOverallState == InjectorState.PARTIAL) {
+            listOf(
+                diagnosticInjector("GPS / Network", InjectorState.RUNNING),
+                diagnosticInjector("Fused", InjectorState.FAILED),
+            )
+        } else {
+            listOf(
+                diagnosticInjector("GPS / Network", injectorOverallState),
+                diagnosticInjector("Fused", injectorOverallState),
+            )
+        }
         return DiagnosticSnapshot(
             generatedAtMillis = NOW,
+            deviceManufacturer = "Aurora",
+            deviceModel = "Test Device",
+            androidVersion = "15",
+            androidApiLevel = 35,
+            appVersionName = "1.0-test",
+            appVersionCode = 1L,
             isMockAppSelected = isMockAppSelected,
             missingPermissions = missingPermissions,
             gpsEnabled = true,
@@ -114,7 +156,16 @@ class DiagnosticVerdictTest {
             fusedLastSuccessfulLatitude = 31.0,
             fusedLastSuccessfulLongitude = 121.0,
             fusedLastError = fusedLastError,
-            appState = MockState.Running,
+            injectorOverallState = injectorOverallState,
+            injectorActiveCount = injectorStatuses.count { it.state == InjectorState.RUNNING },
+            injectorFailedCount = injectorStatuses.count { it.state == InjectorState.FAILED },
+            injectorStatuses = injectorStatuses,
+            injectorWarning = if (injectorOverallState == InjectorState.PARTIAL) {
+                "部分定位通道不可用: Fused"
+            } else {
+                null
+            },
+            appState = appState,
             lastInjection = InjectionReport(
                 provider = "gps",
                 latitude = 31.0,
@@ -135,6 +186,20 @@ class DiagnosticVerdictTest {
             routeProgressPercent = null,
             calibrationMode = CoordinateCalibrationMode.OFF,
             searchRequestCount = 0,
+        )
+    }
+
+    private fun diagnosticInjector(
+        name: String,
+        state: InjectorState,
+    ): DiagnosticInjectorStatus {
+        return DiagnosticInjectorStatus(
+            id = name,
+            displayName = name,
+            state = state,
+            lastSuccessAtMillis = NOW - 1_000L,
+            lastFailureAtMillis = if (state == InjectorState.FAILED) NOW - 500L else null,
+            lastErrorCode = if (state == InjectorState.FAILED) "UNKNOWN" else null,
         )
     }
 

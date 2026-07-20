@@ -76,6 +76,8 @@ class MainActivity : ComponentActivity() {
             val plannedRoute by controller.plannedRoute.collectAsState()
             val travelMode by controller.travelMode.collectAsState()
             val routeProgress by controller.routeProgress.collectAsState()
+            val injectorStatus by controller.injectorStatus.collectAsState()
+            val injectorWarning by controller.injectorWarning.collectAsState()
             val fusedDiagnostics by FusedLocationDiagnosticsStore.state.collectAsState()
 
             val mapPreferencesStore = remember { MapPreferencesStore(this@MainActivity) }
@@ -150,6 +152,8 @@ class MainActivity : ComponentActivity() {
                         travelMode = travelMode,
                         routeProgress = routeProgress,
                         mapPreferencesStore = mapPreferencesStore,
+                        injectorStatus = injectorStatus,
+                        injectorWarning = injectorWarning,
                     ),
                 )
             }
@@ -173,6 +177,8 @@ class MainActivity : ComponentActivity() {
                     travelMode = travelMode,
                     routeProgress = routeProgress,
                     mapPreferencesStore = mapPreferencesStore,
+                    injectorStatus = injectorStatus,
+                    injectorWarning = injectorWarning,
                 )
             }
 
@@ -244,15 +250,17 @@ class MainActivity : ComponentActivity() {
                 lastInjection,
                 mapUiState.searchRequestCount,
                 mapUiState.calibrationMode,
-                                movementMode,
-                                movementState,
-                                movementCurrentSpeedMps,
-                                movementDistanceFromCenterMeters,
-                                movementTrace.size,
-                                plannedRoute?.id,
-                                routeProgress?.percent,
-                                fusedDiagnostics,
-                            ) {
+                movementMode,
+                movementState,
+                movementCurrentSpeedMps,
+                movementDistanceFromCenterMeters,
+                movementTrace.size,
+                plannedRoute?.id,
+                routeProgress?.percent,
+                injectorStatus,
+                injectorWarning,
+                fusedDiagnostics,
+            ) {
                 refreshDiagnostics()
             }
 
@@ -272,6 +280,8 @@ class MainActivity : ComponentActivity() {
                             if (missingPermissions.isNotEmpty()) {
                                 permissionLauncher.launch(missingPermissions.toTypedArray())
                                 controller.onError("请先授予定位权限")
+                            } else if (!isMockAppSelected) {
+                                controller.onError("请先在开发者选项中设置模拟位置信息应用")
                             } else {
                                 showOnboarding = false
                                 prefs.edit().putBoolean(KEY_ONBOARDING_DONE, true).apply()

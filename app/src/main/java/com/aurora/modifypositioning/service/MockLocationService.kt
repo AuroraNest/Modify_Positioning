@@ -25,7 +25,6 @@ import com.aurora.modifypositioning.domain.calibration.MainlandCoordinateCalibra
 import com.aurora.modifypositioning.location.AndroidLocationInjector
 import com.aurora.modifypositioning.location.CompositeLocationInjector
 import com.aurora.modifypositioning.location.FusedLocationInjector
-import com.aurora.modifypositioning.location.SampledLocationInjector
 import com.aurora.modifypositioning.model.CoordinateCalibrationMode
 import com.aurora.modifypositioning.model.DEFAULT_TARGET
 import com.aurora.modifypositioning.model.ENHANCED_STARTUP_BURST_COUNT
@@ -58,7 +57,7 @@ import kotlinx.coroutines.runBlocking
 
 class MockLocationService : Service() {
 
-    private lateinit var injector: SampledLocationInjector
+    private lateinit var injector: CompositeLocationInjector
     private val controller = MockControllerStore.instance
     private lateinit var mapPreferencesStore: MapPreferencesStore
     private val coordinateCalibrator = MainlandCoordinateCalibrator()
@@ -80,8 +79,7 @@ class MockLocationService : Service() {
         createNotificationChannel(this)
         mapPreferencesStore = MapPreferencesStore(this)
         val onInjectionError: (String) -> Unit = { error ->
-            controller.onError(error)
-            refreshNotification()
+            handleInjectorError(error)
         }
         injector = CompositeLocationInjector(
             injectors = listOf(
@@ -189,6 +187,7 @@ class MockLocationService : Service() {
         )
         injector.start(initialInjectTarget)
         controller.onServiceStarted(startupPlan.movementStartTarget)
+        publishInjectorHealth()
         acquireWakeLock()
         thirdPartyCompatibilityUntilMillis = System.currentTimeMillis() + THIRD_PARTY_COMPATIBILITY_WARMUP_MS
         recoveryBurstRemain = 0
@@ -315,6 +314,8 @@ class MockLocationService : Service() {
                             target = injectTarget,
                             movementMode = MovementMode.RANDOM_WALK,
                             environment = environmentFor(MovementMode.RANDOM_WALK),
+                            speedMps = step.speedMps,
+                            bearingDegrees = step.headingDeg,
                         )
                         controller.updateTarget(displayTarget)
                         controller.onMovementProgress(
@@ -338,6 +339,8 @@ class MockLocationService : Service() {
                             target = injectTarget,
                             movementMode = MovementMode.RANDOM_WALK,
                             environment = environmentFor(MovementMode.RANDOM_WALK),
+                            speedMps = 0.0,
+                            bearingDegrees = null,
                         )
                         controller.updateTarget(displayTarget)
                         controller.onMovementProgress(
@@ -427,6 +430,8 @@ class MockLocationService : Service() {
             target = injectTarget,
             movementMode = controller.movementMode.value,
             environment = EnvironmentProfile.MOVING_VEHICLE,
+            speedMps = tick.speedMps,
+            bearingDegrees = tick.bearingDegrees,
         )
         controller.updateTarget(displayTarget)
         controller.onRouteSimulationProgress(
@@ -474,6 +479,20 @@ class MockLocationService : Service() {
             return
         }
         injector.inject(sample)
+        publishInjectorHealth()
+    }
+
+    private fun handleInjectorError(error: String) {
+        if (::injector.isInitialized) {
+            publishInjectorHealth()
+        } else {
+            controller.onError(error)
+        }
+        refreshNotification()
+    }
+
+    private fun publishInjectorHealth() {
+        controller.onInjectorStatus(injector.aggregateStatus())
     }
 
     private fun nextSteadyInjectionDelayMillis(): Long {
@@ -525,6 +544,7 @@ class MockLocationService : Service() {
         }
         stopRandomWalkLoop()
         stopRouteMovementLoop()
+        simulationEngine?.stopMotion()
         if (controller.movementMode.value == MovementMode.RANDOM_WALK) {
             controller.onMovementPaused()
         } else if (
@@ -542,6 +562,7 @@ class MockLocationService : Service() {
         stopRouteMovementLoop()
         stopInjectionLoop()
         injector.stop()
+        publishInjectorHealth()
         releaseWakeLock()
         controller.onServiceStopped()
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -615,8 +636,8 @@ class MockLocationService : Service() {
                 when (controller.movementMode.value) {
                     MovementMode.RANDOM_WALK -> {
                         when (controller.movementState.value) {
-                            MovementState.Walking -> "随机步行模拟中"
-                            MovementState.ReachedBoundary -> "已到边界，保持当前位置"
+                            MovementState.Walking -> getRunningContentText()
+                            MovementState.ReachedBoundary -> "${getRunningContentText()} / 已到边界"
                             MovementState.Paused -> getPausedContentText()
                             else -> getRunningContentText()
                         }
@@ -625,9 +646,9 @@ class MockLocationService : Service() {
                     MovementMode.POINT_TO_POINT_NAV,
                     MovementMode.CUSTOM_ROUTE -> {
                         when (controller.movementState.value) {
-                            MovementState.ReachedDestination -> "已到终点，保持当前位置"
+                            MovementState.ReachedDestination -> "${getRunningContentText()} / 已到终点"
                             MovementState.Paused -> getPausedContentText()
-                            else -> "路线模拟中"
+                            else -> getRunningContentText()
                         }
                     }
 
@@ -642,7 +663,17 @@ class MockLocationService : Service() {
     }
 
     private fun getRunningContentText(): String {
-        return getString(R.string.notification_content_running)
+        val modeLabel = when (controller.movementMode.value) {
+            MovementMode.FIXED -> "固定定位"
+            MovementMode.RANDOM_WALK -> "随机步行"
+            MovementMode.POINT_TO_POINT_NAV -> "两点导航"
+            MovementMode.CUSTOM_ROUTE -> "指定路线"
+        }
+        return getString(
+            R.string.notification_content_running,
+            modeLabel,
+            controller.target.value.name,
+        )
     }
 
     private fun getPausedContentText(): String {

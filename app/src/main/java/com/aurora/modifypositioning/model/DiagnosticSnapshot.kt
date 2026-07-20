@@ -1,5 +1,7 @@
 package com.aurora.modifypositioning.model
 
+import com.aurora.modifypositioning.location.InjectorState
+
 data class DiagnosticLocation(
     val provider: String,
     val latitude: Double,
@@ -10,8 +12,23 @@ data class DiagnosticLocation(
     val distanceToLastInjectionMeters: Double? = null,
 )
 
+data class DiagnosticInjectorStatus(
+    val id: String,
+    val displayName: String,
+    val state: InjectorState,
+    val lastSuccessAtMillis: Long?,
+    val lastFailureAtMillis: Long?,
+    val lastErrorCode: String?,
+)
+
 data class DiagnosticSnapshot(
     val generatedAtMillis: Long,
+    val deviceManufacturer: String,
+    val deviceModel: String,
+    val androidVersion: String,
+    val androidApiLevel: Int,
+    val appVersionName: String,
+    val appVersionCode: Long,
     val isMockAppSelected: Boolean,
     val missingPermissions: List<String>,
     val gpsEnabled: Boolean,
@@ -26,6 +43,11 @@ data class DiagnosticSnapshot(
     val fusedLastSuccessfulLatitude: Double?,
     val fusedLastSuccessfulLongitude: Double?,
     val fusedLastError: String?,
+    val injectorOverallState: InjectorState,
+    val injectorActiveCount: Int,
+    val injectorFailedCount: Int,
+    val injectorStatuses: List<DiagnosticInjectorStatus>,
+    val injectorWarning: String?,
     val appState: MockState,
     val lastInjection: InjectionReport?,
     val movementMode: MovementMode,

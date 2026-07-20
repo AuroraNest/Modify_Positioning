@@ -3,7 +3,7 @@
     <string name="notification_channel_name">定位模拟服务</string>
     <string name="notification_channel_desc">持续向系统注入模拟定位</string>
     <string name="notification_title">定位模拟运行中</string>
-    <string name="notification_content_running">正在模拟纽约时代广场位置</string>
+    <string name="notification_content_running">正在模拟: %1$s / %2$s</string>
     <string name="notification_content_paused">定位模拟已暂停</string>
     <string name="notification_content_error">定位模拟出现异常</string>
 </resources>

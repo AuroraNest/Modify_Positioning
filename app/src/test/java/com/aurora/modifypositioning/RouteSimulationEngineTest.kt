@@ -6,6 +6,8 @@ import com.aurora.modifypositioning.model.RoutePoint
 import com.aurora.modifypositioning.model.RouteSource
 import com.aurora.modifypositioning.model.TravelMode
 import kotlin.random.Random
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -67,6 +69,38 @@ class RouteSimulationEngineTest {
         assertTrue(reached)
     }
 
+    @Test
+    fun movingTick_reportsBearingFromConsecutiveRoutePositions() {
+        val route = simpleRoute(distanceMeters = 600.0)
+        val session = RouteSimulationEngine(random = Random(21)).createSession(
+            route = route,
+            mode = TravelMode.WALK,
+            startTimeMs = 1_000L,
+        )
+
+        val tick = session.advance(2_000L)
+
+        assertTrue(tick.speedMps > 0.45)
+        assertEquals(0.0, tick.bearingDegrees ?: Double.NaN, 0.5)
+    }
+
+    @Test
+    fun destinationTick_clearsSpeedAndBearing() {
+        val route = simpleRoute(distanceMeters = 0.2)
+        val session = RouteSimulationEngine(random = Random(22)).createSession(
+            route = route,
+            mode = TravelMode.WALK,
+            startTimeMs = 1_000L,
+        )
+
+        val tick = session.advance(2_000L)
+
+        assertTrue(tick.reachedDestination)
+        assertEquals(0.0, tick.speedMps, 0.0)
+        assertNull(tick.bearingDegrees)
+        assertEquals(0.0, tick.progress.remainingMeters, 0.0)
+    }
+
     private fun simpleRoute(distanceMeters: Double): PlannedRoute {
         val latDelta = distanceMeters / 111_320.0
         return PlannedRoute(
@@ -82,4 +116,3 @@ class RouteSimulationEngineTest {
         )
     }
 }
-

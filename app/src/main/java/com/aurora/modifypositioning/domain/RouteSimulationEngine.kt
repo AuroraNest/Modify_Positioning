@@ -51,6 +51,7 @@ class RouteSimulationEngine(
             return SimulationTick(
                 point = point.copy(ts = nowMs),
                 speedMps = 0.0,
+                bearingDegrees = null,
                 progress = RouteProgress(
                     traveledMeters = traveledMeters,
                     remainingMeters = remainingMeters,
@@ -65,20 +66,32 @@ class RouteSimulationEngine(
             val dtSeconds = ((nowMs - lastTickMs) / 1_000.0).coerceIn(0.1, 5.0)
             lastTickMs = nowMs
 
-            val speed = computeSpeed(nowMs)
-            traveledMeters = (traveledMeters + speed * dtSeconds).coerceAtMost(totalDistance)
+            val previousPoint = interpolatePoint(route.points, cumulativeDistances, traveledMeters)
+            val requestedSpeed = computeSpeed(nowMs).coerceAtLeast(0.0)
+            traveledMeters = (traveledMeters + requestedSpeed * dtSeconds).coerceAtMost(totalDistance)
+            val reached = traveledMeters >= max(totalDistance - 0.5, 0.0)
+            if (reached) {
+                traveledMeters = totalDistance
+            }
             val remainingMeters = (totalDistance - traveledMeters).coerceAtLeast(0.0)
+            val point = interpolatePoint(route.points, cumulativeDistances, traveledMeters)
+            val movedMeters = haversineMeters(previousPoint, point)
+            val speed = if (reached) 0.0 else requestedSpeed
+            val bearing = if (speed > 0.0 && movedMeters > 0.001) {
+                bearingDegrees(previousPoint, point)
+            } else {
+                null
+            }
             val remainingSeconds = if (speed <= 0.0) {
                 remainingMeters / profile.avgSpeedMps.coerceAtLeast(0.5)
             } else {
                 remainingMeters / speed
             }
-            val point = interpolatePoint(route.points, cumulativeDistances, traveledMeters)
-            val reached = traveledMeters >= max(totalDistance - 0.5, 0.0)
 
             return SimulationTick(
                 point = point.copy(ts = nowMs),
                 speedMps = speed,
+                bearingDegrees = bearing,
                 progress = RouteProgress(
                     traveledMeters = traveledMeters,
                     remainingMeters = remainingMeters,
@@ -116,6 +129,7 @@ class RouteSimulationEngine(
 data class SimulationTick(
     val point: RoutePoint,
     val speedMps: Double,
+    val bearingDegrees: Double?,
     val progress: RouteProgress,
     val reachedDestination: Boolean,
 )
@@ -170,3 +184,12 @@ private fun interpolatePoint(
     )
 }
 
+private fun bearingDegrees(from: RoutePoint, to: RoutePoint): Double {
+    val fromLatitude = Math.toRadians(from.lat)
+    val toLatitude = Math.toRadians(to.lat)
+    val longitudeDelta = Math.toRadians(to.lng - from.lng)
+    val y = kotlin.math.sin(longitudeDelta) * kotlin.math.cos(toLatitude)
+    val x = kotlin.math.cos(fromLatitude) * kotlin.math.sin(toLatitude) -
+        kotlin.math.sin(fromLatitude) * kotlin.math.cos(toLatitude) * kotlin.math.cos(longitudeDelta)
+    return ((Math.toDegrees(kotlin.math.atan2(y, x)) % 360.0) + 360.0) % 360.0
+}

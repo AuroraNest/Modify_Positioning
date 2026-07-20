@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
@@ -150,10 +151,13 @@ fun OnboardingScreen(
 
             Button(
                 onClick = onContinue,
-                modifier = Modifier.fillMaxWidth(),
+                enabled = !permissionsReady || isMockAppSelected,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("onboarding_continue"),
                 shape = RoundedCornerShape(8.dp),
             ) {
-                Text("进入地图控制台")
+                Text(if (permissionsReady) "进入地图控制台" else "授予定位权限")
             }
         }
     }

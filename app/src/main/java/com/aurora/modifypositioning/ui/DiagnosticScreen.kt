@@ -118,6 +118,9 @@ fun DiagnosticScreen(
             ) {
                 Text("系统环境")
                 Text("检测时间: ${formatTime(snapshot.generatedAtMillis)}")
+                Text("设备: ${snapshot.deviceManufacturer} ${snapshot.deviceModel}")
+                Text("Android: ${snapshot.androidVersion} (API ${snapshot.androidApiLevel})")
+                Text("App 版本: ${snapshot.appVersionName} (${snapshot.appVersionCode})")
                 Text("模拟位置信息应用: ${if (snapshot.isMockAppSelected) "已设置" else "未设置"}")
                 Text("GPS 开关: ${if (snapshot.gpsEnabled) "开启" else "关闭"}")
                 Text("网络定位开关: ${if (snapshot.networkEnabled) "开启" else "关闭"}")
@@ -182,6 +185,32 @@ fun DiagnosticScreen(
 
         DiagnosticLocationCard(title = "GPS 最近位置", location = snapshot.gpsLastKnown)
         DiagnosticLocationCard(title = "Network 最近位置", location = snapshot.networkLastKnown)
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text("注入通道状态")
+                Text("整体: ${snapshot.injectorOverallState}")
+                Text("运行: ${snapshot.injectorActiveCount}, 失败: ${snapshot.injectorFailedCount}")
+                Text("提示: ${snapshot.injectorWarning ?: "-"}")
+                snapshot.injectorStatuses.forEach { status ->
+                    Text("${status.displayName}: ${status.state}")
+                    Text(
+                        "最近成功: ${formatTimeOrDash(status.lastSuccessAtMillis)}, " +
+                            "最近失败: ${formatTimeOrDash(status.lastFailureAtMillis)}, " +
+                            "错误码: ${status.lastErrorCode ?: "-"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
 
         Card(
             modifier = Modifier.fillMaxWidth(),

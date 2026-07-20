@@ -16,15 +16,29 @@ class MovementSampleGenerator(
         timestampMillis: Long,
         elapsedRealtimeNanos: Long,
         sourceLabel: String,
+        motionSpeedMps: Double,
+        motionBearingDegrees: Double?,
     ): LocationSample {
-        val point = driftModel.next(
-            anchorLatitude = target.latitude,
-            anchorLongitude = target.longitude,
-            environment = environment,
-            previous = previous,
-            nowMillis = timestampMillis,
-            elapsedRealtimeNanos = elapsedRealtimeNanos,
-        )
+        val point = if (movementMode == MovementMode.FIXED) {
+            driftModel.next(
+                anchorLatitude = target.latitude,
+                anchorLongitude = target.longitude,
+                environment = environment,
+                previous = previous,
+                nowMillis = timestampMillis,
+                elapsedRealtimeNanos = elapsedRealtimeNanos,
+            )
+        } else {
+            val speed = motionSpeedMps.coerceAtLeast(0.0)
+            DriftPoint(
+                latitude = target.latitude,
+                longitude = target.longitude,
+                speedMps = speed.toFloat(),
+                bearingDegrees = motionBearingDegrees
+                    ?.takeIf { speed > 0.0 }
+                    ?.let { (((it % 360.0) + 360.0) % 360.0).toFloat() },
+            )
+        }
         val accuracy = accuracyModel.nextAccuracy(
             environment = environment,
             movementMode = movementMode,

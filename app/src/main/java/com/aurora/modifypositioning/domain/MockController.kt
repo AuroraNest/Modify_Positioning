@@ -1,5 +1,7 @@
 package com.aurora.modifypositioning.domain
 
+import com.aurora.modifypositioning.location.CompositeInjectorStatus
+import com.aurora.modifypositioning.location.InjectorState
 import com.aurora.modifypositioning.model.DEFAULT_TARGET
 import com.aurora.modifypositioning.model.InjectionReport
 import com.aurora.modifypositioning.model.MockState
@@ -17,14 +19,31 @@ import kotlinx.coroutines.flow.asStateFlow
 class MockController(
     initialTarget: TargetLocation = DEFAULT_TARGET,
 ) {
+    private var baseStatusText = "尚未启动"
+    private var injectorFailureActive = false
+    private var stateBeforeInjectorFailure: MockState? = null
+
     private val _state = MutableStateFlow<MockState>(MockState.Idle)
     val state: StateFlow<MockState> = _state.asStateFlow()
 
     private val _target = MutableStateFlow(initialTarget)
     val target: StateFlow<TargetLocation> = _target.asStateFlow()
 
-    private val _statusText = MutableStateFlow("尚未启动")
+    private val _statusText = MutableStateFlow(baseStatusText)
     val statusText: StateFlow<String> = _statusText.asStateFlow()
+
+    private val _injectorStatus = MutableStateFlow(
+        CompositeInjectorStatus(
+            overallState = InjectorState.IDLE,
+            activeCount = 0,
+            failedCount = 0,
+            statuses = emptyList(),
+        ),
+    )
+    val injectorStatus: StateFlow<CompositeInjectorStatus> = _injectorStatus.asStateFlow()
+
+    private val _injectorWarning = MutableStateFlow<String?>(null)
+    val injectorWarning: StateFlow<String?> = _injectorWarning.asStateFlow()
 
     private val _lastInjection = MutableStateFlow<InjectionReport?>(null)
     val lastInjection: StateFlow<InjectionReport?> = _lastInjection.asStateFlow()
@@ -69,21 +88,27 @@ class MockController(
     fun onServiceStarted(targetLocation: TargetLocation = _target.value) {
         _target.value = targetLocation
         _state.value = MockState.Running
-        _statusText.value = when (_movementMode.value) {
+        injectorFailureActive = false
+        stateBeforeInjectorFailure = null
+        _injectorWarning.value = null
+        setBaseStatusText(when (_movementMode.value) {
             MovementMode.FIXED -> "正在模拟: ${targetLocation.name}"
             MovementMode.RANDOM_WALK -> "随机步行中"
             MovementMode.POINT_TO_POINT_NAV, MovementMode.CUSTOM_ROUTE -> "路线模拟中"
-        }
+        })
     }
 
     fun onServicePaused() {
         _state.value = MockState.Paused
-        _statusText.value = "已暂停移动, 保持当前位置"
+        setBaseStatusText("已暂停移动, 保持当前位置")
     }
 
     fun onServiceStopped() {
         _state.value = MockState.Idle
-        _statusText.value = "模拟已停止"
+        injectorFailureActive = false
+        stateBeforeInjectorFailure = null
+        _injectorWarning.value = null
+        setBaseStatusText("模拟已停止")
         _lastInjection.value = null
         onMovementStopped()
     }
@@ -93,11 +118,69 @@ class MockController(
     }
 
     fun onError(message: String) {
+        injectorFailureActive = false
+        stateBeforeInjectorFailure = null
         _state.value = MockState.Error(message)
-        _statusText.value = message
+        setBaseStatusText(message)
         _routeError.value = message
         if (_movementMode.value != MovementMode.FIXED) {
             _movementState.value = MovementState.Error(message)
+        }
+    }
+
+    fun onInjectorStatus(status: CompositeInjectorStatus) {
+        _injectorStatus.value = status
+        when (status.overallState) {
+            InjectorState.FAILED -> {
+                if (stateBeforeInjectorFailure == null) {
+                    stateBeforeInjectorFailure = _state.value.takeIf {
+                        it == MockState.Running || it == MockState.Paused
+                    }
+                }
+                injectorFailureActive = true
+                _injectorWarning.value = null
+                val failedNames = status.statuses
+                    .filter { it.state == InjectorState.FAILED }
+                    .joinToString { it.displayName }
+                val message = if (failedNames.isBlank()) {
+                    "所有定位通道均失败"
+                } else {
+                    "所有定位通道均失败: $failedNames"
+                }
+                _state.value = MockState.Error(message)
+                _statusText.value = message
+            }
+
+            InjectorState.PARTIAL,
+            InjectorState.DEGRADED,
+            -> {
+                restoreStateAfterInjectorFailure()
+                val unavailableNames = status.statuses
+                    .filter { it.state != InjectorState.RUNNING }
+                    .joinToString { it.displayName }
+                _injectorWarning.value = if (unavailableNames.isBlank()) {
+                    "部分定位通道不可用"
+                } else {
+                    "部分定位通道不可用: $unavailableNames"
+                }
+                renderStatusText()
+            }
+
+            InjectorState.RUNNING -> {
+                restoreStateAfterInjectorFailure()
+                _injectorWarning.value = null
+                renderStatusText()
+            }
+
+            InjectorState.IDLE,
+            InjectorState.STARTING,
+            InjectorState.STOPPED,
+            -> {
+                if (status.overallState != InjectorState.STARTING) {
+                    _injectorWarning.value = null
+                    renderStatusText()
+                }
+            }
         }
     }
 
@@ -130,7 +213,7 @@ class MockController(
         _movementCurrentSpeedMps.value = 0.0
         _movementDistanceFromCenterMeters.value = 0.0
         _routeProgress.value = null
-        _statusText.value = "随机步行中"
+        setBaseStatusText("随机步行中")
     }
 
     fun onRouteSimulationStarted(route: PlannedRoute, startPoint: MovementPoint, initialProgress: RouteProgress) {
@@ -142,7 +225,7 @@ class MockController(
         _movementDistanceFromCenterMeters.value = initialProgress.remainingMeters
         _routeProgress.value = initialProgress
         _routeError.value = null
-        _statusText.value = "路线模拟中"
+        setBaseStatusText("路线模拟中")
     }
 
     fun onMovementProgress(point: MovementPoint, speedMps: Double, distanceFromCenterMeters: Double) {
@@ -156,7 +239,7 @@ class MockController(
         _movementCurrentSpeedMps.value = speedMps
         _movementDistanceFromCenterMeters.value = distanceFromCenterMeters
         _movementState.value = MovementState.Walking
-        _statusText.value = "随机步行中"
+        setBaseStatusText("随机步行中")
     }
 
     fun onRouteSimulationProgress(point: MovementPoint, speedMps: Double, progress: RouteProgress) {
@@ -171,14 +254,14 @@ class MockController(
         _movementDistanceFromCenterMeters.value = progress.remainingMeters
         _routeProgress.value = progress
         _movementState.value = MovementState.Walking
-        _statusText.value = "路线模拟中"
+        setBaseStatusText("路线模拟中")
     }
 
     fun onMovementReachedBoundary(distanceFromCenterMeters: Double) {
         _movementState.value = MovementState.ReachedBoundary
         _movementCurrentSpeedMps.value = 0.0
         _movementDistanceFromCenterMeters.value = distanceFromCenterMeters
-        _statusText.value = "已到边界，移动已停止（定位保持当前点）"
+        setBaseStatusText("已到边界, 移动已停止(定位保持当前点)")
     }
 
     fun onRouteSimulationReachedDestination(point: MovementPoint, progress: RouteProgress) {
@@ -193,7 +276,7 @@ class MockController(
         _movementCurrentSpeedMps.value = 0.0
         _movementDistanceFromCenterMeters.value = 0.0
         _routeProgress.value = progress
-        _statusText.value = "已到终点，保持当前位置"
+        setBaseStatusText("已到终点, 保持当前位置")
     }
 
     fun onMovementPaused() {
@@ -204,11 +287,11 @@ class MockController(
     fun onMovementResumed() {
         _movementState.value = MovementState.Walking
         _movementCurrentSpeedMps.value = 0.0
-        _statusText.value = if (_movementMode.value == MovementMode.RANDOM_WALK) {
+        setBaseStatusText(if (_movementMode.value == MovementMode.RANDOM_WALK) {
             "随机步行中"
         } else {
             "路线模拟中"
-        }
+        })
     }
 
     fun onMovementStopped() {
@@ -217,6 +300,32 @@ class MockController(
         _movementCurrentSpeedMps.value = 0.0
         _movementDistanceFromCenterMeters.value = 0.0
         _routeProgress.value = null
+    }
+
+    private fun setBaseStatusText(text: String) {
+        baseStatusText = text
+        renderStatusText()
+    }
+
+    private fun restoreStateAfterInjectorFailure() {
+        if (!injectorFailureActive) {
+            return
+        }
+        stateBeforeInjectorFailure?.let { _state.value = it }
+        injectorFailureActive = false
+        stateBeforeInjectorFailure = null
+    }
+
+    private fun renderStatusText() {
+        val warning = _injectorWarning.value
+        _statusText.value = if (
+            warning != null &&
+            (_state.value == MockState.Running || _state.value == MockState.Paused)
+        ) {
+            "$baseStatusText | $warning"
+        } else {
+            baseStatusText
+        }
     }
 
     companion object {
