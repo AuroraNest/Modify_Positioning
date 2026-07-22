@@ -1,5 +1,8 @@
 # Modify Positioning
 
+> [!IMPORTANT]
+> **iOS 用户请看这里:** 本项目仅支持 Android. iOS 修改定位可参考 [Yu9191/wloc](https://github.com/Yu9191/wloc). 该方案修改 Apple 网络定位(Wi-Fi/基站)返回坐标, 需要代理模块与 MITM 配置; 不会修改 GPS 硬件定位, 请以其仓库说明为准.
+
 Modify Positioning 是一个无 Root Android 虚拟定位 App, 使用 Android 官方 mock location 能力把选定坐标持续注入到系统标准定位链路中. 项目目标是做一个真实, 稳定, 可诊断的 Android Location Simulation Lab, 方便开发者和测试人员验证地图选点, GPS provider, Network provider, Fused Location Provider, 前台服务和位置诊断流程.
 
 关键词: Android mock location, fake GPS, virtual location, location simulator, GPS spoofing for development, Jetpack Compose, Kotlin, LocationManager, FusedLocationProviderClient, foreground service, no root location changer, mock GPS app, GPS/Network/Fused provider diagnostics.
