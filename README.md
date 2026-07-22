@@ -1,11 +1,21 @@
 # Modify Positioning
 
 > [!IMPORTANT]
-> **iOS 用户请看这里:** 本项目仅支持 Android. iOS 修改定位可参考 [Yu9191/wloc](https://github.com/Yu9191/wloc). 该方案修改 Apple 网络定位(Wi-Fi/基站)返回坐标, 需要代理模块与 MITM 配置; 不会修改 GPS 硬件定位, 请以其仓库说明为准（本人亲测有效！！）.
+> **iOS 独立方案来自 [Yu9191/wloc](https://github.com/Yu9191/wloc), 本人亲测有效!** 本仓库仅通过 Git submodule 引用该外部项目, 不代表其原创或所有权归属本项目. 原作者为 [Yu9191](https://github.com/Yu9191), 使用方法和更新以原仓库为准. 进入 [`ios/`](ios/) 查看引用说明.
 
 Modify Positioning 是一个无 Root Android 虚拟定位 App, 使用 Android 官方 mock location 能力把选定坐标持续注入到系统标准定位链路中. 项目目标是做一个真实, 稳定, 可诊断的 Android Location Simulation Lab, 方便开发者和测试人员验证地图选点, GPS provider, Network provider, Fused Location Provider, 前台服务和位置诊断流程.
 
 关键词: Android mock location, fake GPS, virtual location, location simulator, GPS spoofing for development, Jetpack Compose, Kotlin, LocationManager, FusedLocationProviderClient, foreground service, no root location changer, mock GPS app, GPS/Network/Fused provider diagnostics.
+
+## 平台项目
+
+| 平台 | 目录 | 归属与说明 |
+| --- | --- | --- |
+| Android | [`app/`](app/) | 本仓库原生 Android App, 使用 Android 官方 mock location 能力. |
+| iOS | [`ios/wloc`](ios/wloc) | **外部项目引用:** [Yu9191/wloc](https://github.com/Yu9191/wloc), 通过 Git submodule 保留原仓库来源与版本. |
+
+> [!CAUTION]
+> `ios/wloc` 不是本项目原创代码. 请勿移除原作者信息、原仓库链接或将其描述为 Modify Positioning 自研功能. 该方案修改 Apple WLOC 网络定位(Wi-Fi/基站)返回坐标, 需要代理模块与 MITM 配置, 不修改 GPS 硬件定位.
 
 ## 功能概览
 
