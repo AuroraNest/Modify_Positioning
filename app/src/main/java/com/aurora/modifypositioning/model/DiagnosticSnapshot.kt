@@ -63,4 +63,5 @@ data class DiagnosticSnapshot(
     val routeProgressPercent: Double?,
     val calibrationMode: CoordinateCalibrationMode,
     val searchRequestCount: Int,
+    val restorationState: RestorationState = RestorationState.NOT_REQUESTED,
 )

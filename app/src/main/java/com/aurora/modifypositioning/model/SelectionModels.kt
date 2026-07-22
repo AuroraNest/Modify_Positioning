@@ -19,6 +19,7 @@ enum class SelectionSource {
     SEARCH,
     FAVORITE,
     MANUAL_INPUT,
+    SHARED,
 }
 
 enum class CoordinateCalibrationMode {

@@ -19,6 +19,7 @@ import com.aurora.modifypositioning.model.MovementPoint
 import com.aurora.modifypositioning.model.MovementState
 import com.aurora.modifypositioning.model.PlannedRoute
 import com.aurora.modifypositioning.model.RouteProgress
+import com.aurora.modifypositioning.model.RestorationState
 import com.aurora.modifypositioning.model.TravelMode
 import kotlinx.coroutines.runBlocking
 
@@ -39,6 +40,7 @@ object LocationDiagnosticsReader {
         mapPreferencesStore: MapPreferencesStore,
         injectorStatus: CompositeInjectorStatus,
         injectorWarning: String?,
+        restorationState: RestorationState,
     ): DiagnosticSnapshot {
         val missingPermissions = MockEnvironmentChecker.missingLocationPermissions(context)
         val manager = context.getSystemService(LocationManager::class.java)
@@ -119,6 +121,7 @@ object LocationDiagnosticsReader {
             routeProgressPercent = routeProgress?.percent,
             calibrationMode = calibrationMode,
             searchRequestCount = AppSessionMetrics.searchRequests,
+            restorationState = restorationState,
         )
     }
 

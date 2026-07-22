@@ -51,14 +51,19 @@ import com.aurora.modifypositioning.ui.movement.MovementViewModelFactory
 import com.aurora.modifypositioning.ui.theme.ModifyPositioningTheme
 import com.aurora.modifypositioning.util.LocationDiagnosticsReader
 import com.aurora.modifypositioning.util.MockEnvironmentChecker
+import com.aurora.modifypositioning.util.SharedLocationParser
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
 
 class MainActivity : ComponentActivity() {
 
     private val controller = MockControllerStore.instance
+    private val sharedLocationRequest = MutableStateFlow<SharedLocationRequest?>(null)
+    private var sharedLocationRequestId = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        acceptSharedLocationIntent(intent)
 
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         val hasCompletedOnboarding = prefs.getBoolean(KEY_ONBOARDING_DONE, false)
@@ -68,6 +73,7 @@ class MainActivity : ComponentActivity() {
             val statusText by controller.statusText.collectAsState()
             val target by controller.target.collectAsState()
             val lastInjection by controller.lastInjection.collectAsState()
+            val restorationState by controller.restorationState.collectAsState()
             val movementMode by controller.movementMode.collectAsState()
             val movementState by controller.movementState.collectAsState()
             val movementCurrentSpeedMps by controller.movementCurrentSpeedMps.collectAsState()
@@ -79,6 +85,7 @@ class MainActivity : ComponentActivity() {
             val injectorStatus by controller.injectorStatus.collectAsState()
             val injectorWarning by controller.injectorWarning.collectAsState()
             val fusedDiagnostics by FusedLocationDiagnosticsStore.state.collectAsState()
+            val pendingSharedLocation by sharedLocationRequest.collectAsState()
 
             val mapPreferencesStore = remember { MapPreferencesStore(this@MainActivity) }
             val favoriteRepository = remember {
@@ -157,6 +164,7 @@ class MainActivity : ComponentActivity() {
                         mapPreferencesStore = mapPreferencesStore,
                         injectorStatus = injectorStatus,
                         injectorWarning = injectorWarning,
+                        restorationState = restorationState,
                     ),
                 )
             }
@@ -188,6 +196,7 @@ class MainActivity : ComponentActivity() {
                     mapPreferencesStore = mapPreferencesStore,
                     injectorStatus = injectorStatus,
                     injectorWarning = injectorWarning,
+                    restorationState = restorationState,
                 )
             }
 
@@ -238,7 +247,7 @@ class MainActivity : ComponentActivity() {
 
             fun stopMock() {
                 startService(MockLocationService.stopIntent(this@MainActivity))
-                Toast.makeText(this@MainActivity, "已停止定位修改", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "正在关闭模拟通道", Toast.LENGTH_SHORT).show()
             }
 
             val permissionLauncher = rememberLauncherForActivityResult(
@@ -248,11 +257,16 @@ class MainActivity : ComponentActivity() {
                 refreshDiagnostics()
             }
 
-            LaunchedEffect(Unit) {
-                val savedTarget = mapPreferencesStore.getTargetOrNull()
-                if (savedTarget != null) {
-                    controller.updateTarget(savedTarget)
-                }
+            LaunchedEffect(pendingSharedLocation?.id) {
+                val request = pendingSharedLocation ?: return@LaunchedEffect
+                mapViewModel.applySharedTarget(request.target)
+                screen = UiScreen.MAP
+                Toast.makeText(
+                    this@MainActivity,
+                    "已导入分享位置: ${request.target.name}",
+                    Toast.LENGTH_SHORT,
+                ).show()
+                sharedLocationRequest.value = null
             }
 
             LaunchedEffect(showOnboarding) {
@@ -275,6 +289,7 @@ class MainActivity : ComponentActivity() {
                 injectorStatus,
                 injectorWarning,
                 fusedDiagnostics,
+                restorationState,
             ) {
                 refreshDiagnostics()
             }
@@ -319,6 +334,7 @@ class MainActivity : ComponentActivity() {
                                 appState = state,
                                 statusText = statusText,
                                 lastInjection = lastInjection,
+                                diagnostics = diagnostics,
                                 onSearchQueryChanged = { mapViewModel.onSearchQueryChanged(it) },
                                 onSuggestionSelected = { mapViewModel.onSuggestionSelected(it) },
                                 onMapDraggedSelection = { lat, lng -> mapViewModel.onMapDraggedSelection(lat, lng) },
@@ -449,6 +465,46 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        acceptSharedLocationIntent(intent)
+    }
+
+    private fun acceptSharedLocationIntent(intent: Intent?) {
+        val sharedText = when (intent?.action) {
+            Intent.ACTION_VIEW -> intent.dataString.takeIf {
+                intent.data?.scheme.equals("geo", ignoreCase = true)
+            }
+
+            Intent.ACTION_SEND -> {
+                if (intent.type != "text/plain") {
+                    return
+                }
+                intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+            }
+
+            else -> return
+        }
+
+        if (sharedText.isNullOrBlank()) {
+            Toast.makeText(this, "无法解析分享的位置", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val target = SharedLocationParser.parse(sharedText)
+        if (target == null) {
+            Toast.makeText(this, "无法解析分享的位置", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        sharedLocationRequestId += 1L
+        sharedLocationRequest.value = SharedLocationRequest(
+            id = sharedLocationRequestId,
+            target = target,
+        )
+    }
+
     private fun openDeveloperOptions() {
         val intent = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
         runCatching { startActivity(intent) }
@@ -484,6 +540,11 @@ class MainActivity : ComponentActivity() {
         private const val KEY_ONBOARDING_DONE = "onboarding_done"
     }
 }
+
+private data class SharedLocationRequest(
+    val id: Long,
+    val target: TargetLocation,
+)
 
 private enum class UiScreen {
     MAP,

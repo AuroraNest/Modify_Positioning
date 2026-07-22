@@ -58,6 +58,8 @@ import com.amap.api.maps.MapsInitializer
 import com.amap.api.maps.MapView as AMapView
 import com.amap.api.maps.model.LatLng
 import com.aurora.modifypositioning.model.CoordinateCalibrationMode
+import com.aurora.modifypositioning.model.DiagnosticLocation
+import com.aurora.modifypositioning.model.DiagnosticSnapshot
 import com.aurora.modifypositioning.model.FavoriteLocation
 import com.aurora.modifypositioning.model.InjectionReport
 import com.aurora.modifypositioning.model.MapProvider
@@ -67,6 +69,9 @@ import com.aurora.modifypositioning.model.SelectionSource
 import com.aurora.modifypositioning.ui.components.FavoriteSheet
 import com.aurora.modifypositioning.ui.components.PlaceSearchBar
 import com.aurora.modifypositioning.ui.map.MapControlUiState
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.abs
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -85,6 +90,7 @@ fun MapControlScreen(
     appState: MockState,
     statusText: String,
     lastInjection: InjectionReport?,
+    diagnostics: DiagnosticSnapshot,
     onSearchQueryChanged: (String) -> Unit,
     onSuggestionSelected: (PlaceSuggestion) -> Unit,
     onMapDraggedSelection: (Double, Double) -> Unit,
@@ -248,6 +254,15 @@ fun MapControlScreen(
                     lastInjection = lastInjection,
                 )
 
+                LocationComparisonCard(
+                    uiState = uiState,
+                    lastInjection = lastInjection,
+                    systemLocation = listOfNotNull(
+                        diagnostics.gpsLastKnown,
+                        diagnostics.networkLastKnown,
+                    ).maxByOrNull(DiagnosticLocation::timeMillis),
+                )
+
                 PlaceSearchBar(
                     query = uiState.searchQuery,
                     suggestions = uiState.suggestions,
@@ -355,6 +370,91 @@ fun MapControlScreen(
             }
         }
     }
+}
+
+@Composable
+private fun LocationComparisonCard(
+    uiState: MapControlUiState,
+    lastInjection: InjectionReport?,
+    systemLocation: DiagnosticLocation?,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("定位三态对照", style = MaterialTheme.typography.titleSmall)
+            ComparisonRow(
+                title = "已选择目标",
+                coordinate = formatComparisonCoordinate(
+                    uiState.selectedTarget.latitude,
+                    uiState.selectedTarget.longitude,
+                ),
+                detail = uiState.selectedTarget.name,
+                testTag = "comparison_selected_target",
+            )
+            HorizontalDivider()
+            ComparisonRow(
+                title = "最近注入",
+                coordinate = lastInjection?.let {
+                    formatComparisonCoordinate(it.latitude, it.longitude)
+                } ?: "暂无",
+                detail = lastInjection?.let {
+                    "${formatComparisonTime(it.timeMillis)} / 精度 ${"%.1f".format(it.accuracyMeters)}m / " +
+                        "验证距离 ${formatComparisonDistance(it.verificationDistanceMeters)}"
+                } ?: "尚无注入记录",
+                testTag = "comparison_last_injection",
+            )
+            HorizontalDivider()
+            ComparisonRow(
+                title = "系统最近返回",
+                coordinate = systemLocation?.let {
+                    formatComparisonCoordinate(it.latitude, it.longitude)
+                } ?: "暂无",
+                detail = systemLocation?.let {
+                    "${it.provider} / ${formatComparisonTime(it.timeMillis)} / " +
+                        "mock=${it.isMock} / 距注入 ${formatComparisonDistance(it.distanceToLastInjectionMeters)}"
+                } ?: "GPS / Network 暂无可读位置",
+                testTag = "comparison_system_last_returned",
+            )
+        }
+    }
+}
+
+@Composable
+private fun ComparisonRow(
+    title: String,
+    coordinate: String,
+    detail: String,
+    testTag: String,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(testTag),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(coordinate, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+        Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+private fun formatComparisonCoordinate(latitude: Double, longitude: Double): String {
+    return "%.6f, %.6f".format(latitude, longitude)
+}
+
+private fun formatComparisonTime(timeMillis: Long): String {
+    return SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(timeMillis))
+}
+
+private fun formatComparisonDistance(distanceMeters: Double?): String {
+    return distanceMeters?.let { "${"%.1f".format(it)}m" } ?: "-"
 }
 
 @Composable

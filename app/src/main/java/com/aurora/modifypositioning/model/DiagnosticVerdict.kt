@@ -189,6 +189,7 @@ fun DiagnosticSnapshot.toCopyableDiagnosticReport(): String {
         appendLine()
         appendLine("服务状态")
         appendLine("- appState: $appState")
+        appendLine("- restorationState: $restorationState")
         appendLine("- movementMode: $movementMode")
         appendLine("- movementState: $movementState")
         appendLine("- routeMode: ${routeMode ?: "-"}")

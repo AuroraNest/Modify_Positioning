@@ -27,6 +27,9 @@ class MovementSampleGenerator(
                 previous = previous,
                 nowMillis = timestampMillis,
                 elapsedRealtimeNanos = elapsedRealtimeNanos,
+            ).copy(
+                speedMps = 0f,
+                bearingDegrees = null,
             )
         } else {
             val speed = motionSpeedMps.coerceAtLeast(0.0)
@@ -53,7 +56,7 @@ class MovementSampleGenerator(
             speedMps = point.speedMps,
             speedAccuracyMps = accuracy.speedAccuracyMps,
             bearingDegrees = point.bearingDegrees,
-            bearingAccuracyDegrees = accuracy.bearingAccuracyDegrees,
+            bearingAccuracyDegrees = accuracy.bearingAccuracyDegrees.takeIf { point.bearingDegrees != null },
             timestampMillis = timestampMillis,
             elapsedRealtimeNanos = elapsedRealtimeNanos,
             movementMode = movementMode,

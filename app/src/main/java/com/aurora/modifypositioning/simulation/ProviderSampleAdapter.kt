@@ -11,9 +11,9 @@ fun LocationSample.toGpsLocation(): Location {
         latitude = latitude,
         longitude = longitude,
         accuracy = accuracyMeters,
-        verticalAccuracy = verticalAccuracyMeters ?: 8f,
-        speedAccuracy = speedAccuracyMps ?: 0.4f,
-        bearingAccuracy = bearingAccuracyDegrees ?: 8f,
+        verticalAccuracy = verticalAccuracyMeters,
+        speedAccuracy = speedAccuracyMps,
+        bearingAccuracy = bearingAccuracyDegrees,
     )
 }
 
@@ -24,9 +24,9 @@ fun LocationSample.toNetworkLocation(): Location {
         latitude = latitude + offset.first,
         longitude = longitude + offset.second,
         accuracy = max(accuracyMeters * 2.5f, 12f),
-        verticalAccuracy = max((verticalAccuracyMeters ?: 16f) * 1.8f, 20f),
-        speedAccuracy = max(speedAccuracyMps ?: 0.8f, 1.2f),
-        bearingAccuracy = max(bearingAccuracyDegrees ?: 12f, 16f),
+        verticalAccuracy = verticalAccuracyMeters?.let { max(it * 1.8f, 20f) },
+        speedAccuracy = speedAccuracyMps?.let { max(it, 1.2f) },
+        bearingAccuracy = bearingAccuracyDegrees?.let { max(it, 16f) },
     )
 }
 
@@ -35,9 +35,9 @@ private fun LocationSample.toAndroidLocation(
     latitude: Double,
     longitude: Double,
     accuracy: Float,
-    verticalAccuracy: Float,
-    speedAccuracy: Float,
-    bearingAccuracy: Float,
+    verticalAccuracy: Float?,
+    speedAccuracy: Float?,
+    bearingAccuracy: Float?,
 ): Location {
     return Location(provider).apply {
         this.latitude = latitude
@@ -45,13 +45,13 @@ private fun LocationSample.toAndroidLocation(
         this.accuracy = accuracy
         time = timestampMillis
         elapsedRealtimeNanos = this@toAndroidLocation.elapsedRealtimeNanos
-        altitude = altitudeMeters ?: 0.0
+        altitudeMeters?.let { altitude = it }
         speedMps?.let { speed = it }
         bearingDegrees?.let { bearing = it }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            verticalAccuracyMeters = verticalAccuracy
-            speedAccuracyMetersPerSecond = speedAccuracy
-            bearingAccuracyDegrees = bearingAccuracy
+            verticalAccuracy?.let { verticalAccuracyMeters = it }
+            speedAccuracy?.let { speedAccuracyMetersPerSecond = it }
+            bearingAccuracy?.let { bearingAccuracyDegrees = it }
         }
     }
 }

@@ -33,6 +33,7 @@ import com.aurora.modifypositioning.model.MockState
 import com.aurora.modifypositioning.model.MovementMode
 import com.aurora.modifypositioning.model.MovementState
 import com.aurora.modifypositioning.model.RouteSource
+import com.aurora.modifypositioning.model.RestorationState
 import com.aurora.modifypositioning.model.TravelMode
 import com.aurora.modifypositioning.model.realLocationOverwriteSummary
 import com.aurora.modifypositioning.model.thirdPartyValidationChecklists
@@ -147,6 +148,7 @@ fun DiagnosticScreen(
             ) {
                 Text("应用运行状态")
                 Text("服务状态: ${stateLabel(snapshot.appState)}")
+                Text("停止闭环: ${restorationStateLabel(snapshot.restorationState)}")
                 Text("移动模式: ${movementModeLabel(snapshot.movementMode)}")
                 Text("移动状态: ${movementStateLabel(snapshot.movementState)}")
                 Text("当前速度: ${"%.2f".format(snapshot.movementCurrentSpeedMps)} m/s")
@@ -340,6 +342,15 @@ private fun stateLabel(state: MockState): String {
         MockState.Running -> "运行中"
         MockState.Paused -> "已暂停"
         is MockState.Error -> "异常: ${state.message}"
+    }
+}
+
+private fun restorationStateLabel(state: RestorationState): String {
+    return when (state) {
+        RestorationState.NOT_REQUESTED -> "未请求"
+        RestorationState.CLEANING -> "正在关闭模拟通道"
+        RestorationState.RESTORED -> "模拟通道已关闭"
+        RestorationState.ATTENTION_REQUIRED -> "模拟通道关闭待确认"
     }
 }
 

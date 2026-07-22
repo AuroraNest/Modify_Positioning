@@ -28,6 +28,8 @@ Modify Positioning 是一个无 Root Android 虚拟定位 App, 使用 Android �
 - 第三方 App 兼容测试: 启动后前 60 秒保持高频注入, 面向微信, 美团, 高德等使用系统定位链路的 App 做兼容测试.
 - Pause 保持当前位置: 暂停只停止移动, 不释放 provider, 继续保持当前位置注入.
 - Stop 完全清理: 停止会关闭注入循环, 清理 test provider, 并关闭 Fused mock mode.
+- 停止闭环: 停止时最多等待约 3 秒确认 Fused mock mode 已关闭, 页面只报告“模拟通道已关闭”或“待确认”, 不把系统缓存描述为已恢复真实坐标.
+- 地图分享导入: 可从 `geo:` 链接或其他 App 分享的坐标文本/地图 URL 导入当前目标; 短链不会联网展开.
 - 随机步行和路线模拟: sample 跟随 domain engine 的目标点, 实际非负速度和连续路径 bearing; 暂停, 边界和终点会归零速度并清除 moving bearing.
 - 通道级容错: GPS/Network 或 Fused 单通道失败时继续运行健康通道并显示 partial warning; 全部失败才进入 Error, 健康恢复后清除 warning.
 - 旅行剧本模型: 内置 Los Angeles Classic Day 和 New York Classic Day preset, 用于后续旅行/城市测试模板.
@@ -105,6 +107,7 @@ UI / Map selection
 4. 授予定位权限并允许精确位置.
 5. 可选: 开启运行通知; 长时间运行时可在系统电池设置中将本 App 设为不限制.
 6. 在地图页拖动十字准星或搜索地点.
+   也可以从地图 App 分享 `geo:` 链接、坐标文本或包含经纬度的常见地图 URL 到 Modify Positioning.
 7. 点击开始虚拟定位.
 8. 打开诊断页, 刷新并确认 mock app, GPS/Network/Fused 状态.
 9. 打开目标 App 验证定位.
@@ -280,6 +283,8 @@ Keywords: Android mock location, fake GPS, virtual location, location simulator,
 - Third-party app compatibility testing: the first 60 seconds use higher frequency injection for apps such as WeChat, Meituan and Amap when they consume standard Android location APIs.
 - Pause keeps location: pause stops movement but continues injecting the current point.
 - Stop cleans up: stop ends the injection loop, removes test providers and disables Fused mock mode.
+- Stop waits up to about 3 seconds for Fused mock mode to report disabled, then shows either channel closed or needs confirmation without claiming cached system coordinates are real.
+- Shared locations can be imported from `geo:` links, coordinate text and common map URLs; short links are not expanded over the network.
 - Moving samples follow domain-engine targets with their actual non-negative speed and consecutive-path bearing. Pause, boundary and destination states clear moving speed and bearing.
 - Provider health is channel-aware: one failed channel keeps healthy channels running with a partial warning; all failed channels enter Error; recovery clears the warning.
 - Travel scenario model includes Los Angeles Classic Day and New York Classic Day presets for future city-trip testing.
@@ -311,6 +316,7 @@ Only the simulation layer creates realistic movement data: drift, accuracy, spee
 3. Select Modify Positioning as the mock location app.
 4. Grant location permission. Android 13+ also needs notification permission.
 5. Search for a place or drag the map crosshair.
+   You can also share a `geo:` link, coordinate text or a common map URL to Modify Positioning.
 6. Tap start virtual location.
 7. Open diagnostics and confirm mock app, GPS, Network and Fused status.
 8. Open the target app and verify location behavior.

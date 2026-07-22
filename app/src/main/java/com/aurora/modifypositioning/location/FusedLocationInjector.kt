@@ -153,7 +153,7 @@ internal class FusedLocationInjectorCore(
             accuracyMeters = sample.accuracyMeters,
             timeMillis = sample.timestampMillis,
             elapsedRealtimeNanos = sample.elapsedRealtimeNanos,
-            altitude = sample.altitudeMeters ?: 0.0,
+            altitude = sample.altitudeMeters,
             speedMps = sample.speedMps,
             bearingDegrees = sample.bearingDegrees,
             verticalAccuracyMeters = sample.verticalAccuracyMeters,
@@ -256,7 +256,7 @@ data class FusedMockLocation(
     val accuracyMeters: Float,
     val timeMillis: Long,
     val elapsedRealtimeNanos: Long,
-    val altitude: Double,
+    val altitude: Double?,
     val speedMps: Float?,
     val bearingDegrees: Float?,
     val verticalAccuracyMeters: Float?,
@@ -295,13 +295,13 @@ private fun FusedMockLocation.toAndroidLocation(): Location {
         accuracy = accuracyMeters
         time = timeMillis
         elapsedRealtimeNanos = this@toAndroidLocation.elapsedRealtimeNanos
-        altitude = this@toAndroidLocation.altitude
+        this@toAndroidLocation.altitude?.let { altitude = it }
         speedMps?.let { speed = it }
         bearingDegrees?.let { bearing = it }
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            verticalAccuracyMeters = this@toAndroidLocation.verticalAccuracyMeters ?: 8f
-            speedAccuracyMetersPerSecond = speedAccuracyMps ?: 0.4f
-            bearingAccuracyDegrees = bearingAccuracyDegrees ?: 8f
+            this@toAndroidLocation.verticalAccuracyMeters?.let { verticalAccuracyMeters = it }
+            speedAccuracyMps?.let { speedAccuracyMetersPerSecond = it }
+            this@toAndroidLocation.bearingAccuracyDegrees?.let { bearingAccuracyDegrees = it }
         }
     }
 }

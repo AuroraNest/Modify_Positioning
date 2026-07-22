@@ -9,6 +9,7 @@ import com.aurora.modifypositioning.model.MovementMode
 import com.aurora.modifypositioning.model.MovementPoint
 import com.aurora.modifypositioning.model.MovementState
 import com.aurora.modifypositioning.model.PlannedRoute
+import com.aurora.modifypositioning.model.RestorationState
 import com.aurora.modifypositioning.model.RouteProgress
 import com.aurora.modifypositioning.model.TargetLocation
 import com.aurora.modifypositioning.model.TravelMode
@@ -48,6 +49,9 @@ class MockController(
     private val _lastInjection = MutableStateFlow<InjectionReport?>(null)
     val lastInjection: StateFlow<InjectionReport?> = _lastInjection.asStateFlow()
 
+    private val _restorationState = MutableStateFlow(RestorationState.NOT_REQUESTED)
+    val restorationState: StateFlow<RestorationState> = _restorationState.asStateFlow()
+
     private val _movementMode = MutableStateFlow(MovementMode.FIXED)
     val movementMode: StateFlow<MovementMode> = _movementMode.asStateFlow()
 
@@ -86,6 +90,7 @@ class MockController(
     }
 
     fun onServiceStarted(targetLocation: TargetLocation = _target.value) {
+        resetRestorationState()
         _target.value = targetLocation
         _state.value = MockState.Running
         injectorFailureActive = false
@@ -103,13 +108,28 @@ class MockController(
         setBaseStatusText("已暂停移动, 保持当前位置")
     }
 
-    fun onServiceStopped() {
+    fun onRestorationStarted() {
+        _restorationState.value = RestorationState.CLEANING
+        setBaseStatusText("正在关闭模拟通道")
+    }
+
+    fun resetRestorationState() {
+        _restorationState.value = RestorationState.NOT_REQUESTED
+    }
+
+    fun onServiceStopped(restorationState: RestorationState = RestorationState.RESTORED) {
         _state.value = MockState.Idle
+        _restorationState.value = restorationState
         injectorFailureActive = false
         stateBeforeInjectorFailure = null
         _injectorWarning.value = null
-        setBaseStatusText("模拟已停止")
-        _lastInjection.value = null
+        setBaseStatusText(
+            if (restorationState == RestorationState.RESTORED) {
+                "模拟通道已关闭"
+            } else {
+                "模拟通道关闭待确认"
+            },
+        )
         onMovementStopped()
     }
 
@@ -317,6 +337,10 @@ class MockController(
     }
 
     private fun renderStatusText() {
+        if (_restorationState.value == RestorationState.CLEANING) {
+            _statusText.value = "正在关闭模拟通道"
+            return
+        }
         val warning = _injectorWarning.value
         _statusText.value = if (
             warning != null &&

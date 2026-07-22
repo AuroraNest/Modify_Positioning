@@ -42,6 +42,7 @@ class MapControlViewModel(
     val uiState: StateFlow<MapControlUiState> = _uiState.asStateFlow()
 
     private var searchJob: Job? = null
+    private var sharedTargetApplied = false
 
     init {
         observeFavorites()
@@ -251,6 +252,15 @@ class MapControlViewModel(
         applyTarget(target, SelectionSource.MANUAL_INPUT)
     }
 
+    fun applySharedTarget(target: TargetLocation) {
+        if (!target.isValid()) {
+            _uiState.update { it.copy(searchError = "分享位置坐标无效") }
+            return
+        }
+        sharedTargetApplied = true
+        applyTarget(target, SelectionSource.SHARED)
+    }
+
     fun onFavoriteNameInputChanged(value: String) {
         _uiState.update { it.copy(favoriteNameInput = value) }
     }
@@ -317,18 +327,22 @@ class MapControlViewModel(
             val target = mapPreferencesStore.getTargetOrNull()
             val camera = mapPreferencesStore.getCameraOrNull()
 
-            if (target != null) {
+            if (target != null && !sharedTargetApplied) {
                 controller.updateTarget(target)
             }
 
             _uiState.update {
-                it.copy(
-                    selectedTarget = target ?: it.selectedTarget,
-                    mapCenterCandidate = target ?: it.mapCenterCandidate,
-                    lastSearchTarget = target ?: it.lastSearchTarget,
-                    camera = camera ?: it.camera,
-                    searchRequestCount = AppSessionMetrics.searchRequests,
-                )
+                if (sharedTargetApplied) {
+                    it.copy(searchRequestCount = AppSessionMetrics.searchRequests)
+                } else {
+                    it.copy(
+                        selectedTarget = target ?: it.selectedTarget,
+                        mapCenterCandidate = target ?: it.mapCenterCandidate,
+                        lastSearchTarget = target ?: it.lastSearchTarget,
+                        camera = camera ?: it.camera,
+                        searchRequestCount = AppSessionMetrics.searchRequests,
+                    )
+                }
             }
         }
     }

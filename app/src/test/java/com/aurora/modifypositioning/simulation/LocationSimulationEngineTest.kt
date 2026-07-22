@@ -30,6 +30,31 @@ class LocationSimulationEngineTest {
     }
 
     @Test
+    fun fixedSamplesKeepDriftButPublishStationaryFields() {
+        var wall = 1_000L
+        var nanos = 10_000L
+        val target = TargetLocation("fixed", 34.0, -118.0)
+        val engine = LocationSimulationEngine(
+            initialTarget = target,
+            initialMovementMode = MovementMode.FIXED,
+            clock = LocationSampleClock(
+                wallTimeProvider = { wall++ },
+                elapsedRealtimeNanosProvider = { nanos++ },
+            ),
+        )
+
+        val samples = List(8) { engine.nextSample() }
+
+        assertTrue(samples.any { it.latitude != target.latitude || it.longitude != target.longitude })
+        samples.forEach { sample ->
+            assertEquals(0.0f, sample.speedMps)
+            assertNull(sample.bearingDegrees)
+            assertNull(sample.bearingAccuracyDegrees)
+            assertNull(sample.altitudeMeters)
+        }
+    }
+
+    @Test
     fun movingSample_usesTargetSpeedAndBearing_withoutStationaryCap() {
         var wall = 1_000L
         var nanos = 10_000L

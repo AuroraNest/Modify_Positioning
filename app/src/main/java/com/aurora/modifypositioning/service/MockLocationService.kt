@@ -24,6 +24,7 @@ import com.aurora.modifypositioning.domain.StepResult
 import com.aurora.modifypositioning.domain.calibration.MainlandCoordinateCalibrator
 import com.aurora.modifypositioning.location.AndroidLocationInjector
 import com.aurora.modifypositioning.location.CompositeLocationInjector
+import com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore
 import com.aurora.modifypositioning.location.FusedLocationInjector
 import com.aurora.modifypositioning.model.CoordinateCalibrationMode
 import com.aurora.modifypositioning.model.DEFAULT_TARGET
@@ -37,11 +38,13 @@ import com.aurora.modifypositioning.model.MovementState
 import com.aurora.modifypositioning.model.PlannedRoute
 import com.aurora.modifypositioning.model.RouteProgress
 import com.aurora.modifypositioning.model.RandomWalkConfig
+import com.aurora.modifypositioning.model.RestorationState
 import com.aurora.modifypositioning.model.TargetLocation
 import com.aurora.modifypositioning.model.THIRD_PARTY_COMPATIBILITY_INTERVAL_MS
 import com.aurora.modifypositioning.model.THIRD_PARTY_COMPATIBILITY_WARMUP_MS
 import com.aurora.modifypositioning.model.THIRD_PARTY_RECOVERY_BURST_COUNT
 import com.aurora.modifypositioning.model.TravelMode
+import com.aurora.modifypositioning.model.evaluateRestorationState
 import com.aurora.modifypositioning.simulation.EnvironmentProfile
 import com.aurora.modifypositioning.simulation.LocationSimulationEngine
 import com.aurora.modifypositioning.util.MockEnvironmentChecker
@@ -68,6 +71,7 @@ class MockLocationService : Service() {
     private var randomWalkJob: Job? = null
     private var routeMovementJob: Job? = null
     private var injectionLoopJob: Job? = null
+    private var restorationJob: Job? = null
     private var simulationEngine: LocationSimulationEngine? = null
     private var thirdPartyCompatibilityUntilMillis = 0L
     private var recoveryBurstRemain = 0
@@ -109,6 +113,8 @@ class MockLocationService : Service() {
             ACTION_START -> {
                 explicitStop = false
                 setKeepRunning(true)
+                restorationJob?.cancel()
+                restorationJob = null
                 handleStart()
             }
 
@@ -129,6 +135,7 @@ class MockLocationService : Service() {
     }
 
     private fun handleStart() {
+        controller.resetRestorationState()
         startForeground(NOTIFICATION_ID, buildNotification(getRunningContentText()))
 
         val missingPermissions = MockEnvironmentChecker.missingLocationPermissions(this)
@@ -567,15 +574,37 @@ class MockLocationService : Service() {
     }
 
     private fun handleStop() {
-        stopRandomWalkLoop()
-        stopRouteMovementLoop()
-        stopInjectionLoop()
-        injector.stop()
-        publishInjectorHealth()
-        releaseWakeLock()
-        controller.onServiceStopped()
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        restorationJob?.cancel()
+        restorationJob = serviceScope.launch {
+            controller.onRestorationStarted()
+            stopRandomWalkLoop()
+            stopRouteMovementLoop()
+            stopInjectionLoop()
+            injector.stop()
+
+            val restorationState = awaitRestorationState()
+            publishInjectorHealth()
+            releaseWakeLock()
+            controller.onServiceStopped(restorationState)
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
+    }
+
+    private suspend fun awaitRestorationState(): RestorationState {
+        val deadlineMillis = System.currentTimeMillis() + RESTORATION_TIMEOUT_MS
+        while (true) {
+            val fused = FusedLocationDiagnosticsStore.state.value
+            val state = evaluateRestorationState(
+                fusedMockModeEnabled = fused.mockModeEnabled,
+                fusedMockModePending = fused.mockModePending,
+                timedOut = System.currentTimeMillis() >= deadlineMillis,
+            )
+            if (state != RestorationState.CLEANING) {
+                return state
+            }
+            delay(RESTORATION_POLL_INTERVAL_MS)
+        }
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -589,7 +618,9 @@ class MockLocationService : Service() {
         stopRandomWalkLoop()
         stopRouteMovementLoop()
         stopInjectionLoop()
-        injector.cleanup()
+        if (!explicitStop) {
+            injector.cleanup()
+        }
         releaseWakeLock()
         serviceScope.cancel()
         if (!explicitStop && shouldKeepRunning()) {
@@ -732,6 +763,8 @@ class MockLocationService : Service() {
         const val ACTION_STOP = "$ACTION_PREFIX.STOP"
         private const val SERVICE_PREFS = "service_prefs"
         private const val KEY_KEEP_RUNNING = "keep_running"
+        private const val RESTORATION_TIMEOUT_MS = 3_000L
+        private const val RESTORATION_POLL_INTERVAL_MS = 100L
 
         fun startIntent(context: Context): Intent {
             return Intent(context, MockLocationService::class.java).setAction(ACTION_START)
