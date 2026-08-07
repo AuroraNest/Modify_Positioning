@@ -67,6 +67,8 @@ class MockLocationService : Service() {
     private val randomWalkEngine = RandomWalkEngine()
     private val routeSimulationEngine = RouteSimulationEngine()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val lifecycleGate = ServiceLifecycleGenerationGate()
+    private val recoveryBurstPolicy = RecoveryBurstPolicy(THIRD_PARTY_RECOVERY_BURST_COUNT)
 
     private var randomWalkJob: Job? = null
     private var routeMovementJob: Job? = null
@@ -74,7 +76,6 @@ class MockLocationService : Service() {
     private var restorationJob: Job? = null
     private var simulationEngine: LocationSimulationEngine? = null
     private var thirdPartyCompatibilityUntilMillis = 0L
-    private var recoveryBurstRemain = 0
     private var explicitStop = false
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -103,14 +104,12 @@ class MockLocationService : Service() {
             ),
             onError = onInjectionError,
         )
-        if (shouldKeepRunning()) {
-            handleStart()
-        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
+                lifecycleGate.beginStart()
                 explicitStop = false
                 setKeepRunning(true)
                 restorationJob?.cancel()
@@ -122,11 +121,12 @@ class MockLocationService : Service() {
             ACTION_STOP -> {
                 explicitStop = true
                 setKeepRunning(false)
-                handleStop()
+                handleStop(startId)
             }
 
             else -> {
                 if (shouldKeepRunning()) {
+                    lifecycleGate.beginStart()
                     handleStart()
                 }
             }
@@ -206,7 +206,7 @@ class MockLocationService : Service() {
         publishInjectorHealth()
         acquireWakeLock()
         thirdPartyCompatibilityUntilMillis = System.currentTimeMillis() + THIRD_PARTY_COMPATIBILITY_WARMUP_MS
-        recoveryBurstRemain = 0
+        recoveryBurstPolicy.reset()
         startInjectionLoop()
 
         when (startupPlan.movementMode) {
@@ -512,8 +512,7 @@ class MockLocationService : Service() {
     }
 
     private fun nextSteadyInjectionDelayMillis(): Long {
-        if (recoveryBurstRemain > 0) {
-            recoveryBurstRemain -= 1
+        if (recoveryBurstPolicy.consumeFastInterval()) {
             return ENHANCED_STARTUP_BURST_INTERVAL_MS
         }
         if (System.currentTimeMillis() < thirdPartyCompatibilityUntilMillis) {
@@ -532,14 +531,12 @@ class MockLocationService : Service() {
         injectionLoopJob = null
         simulationEngine = null
         thirdPartyCompatibilityUntilMillis = 0L
-        recoveryBurstRemain = 0
+        recoveryBurstPolicy.reset()
     }
 
     private fun handleInjectionReport(report: com.aurora.modifypositioning.model.InjectionReport) {
         controller.onInjected(report)
-        if (report.recoveryStatus != null && recoveryBurstRemain < THIRD_PARTY_RECOVERY_BURST_COUNT) {
-            recoveryBurstRemain = THIRD_PARTY_RECOVERY_BURST_COUNT
-        }
+        recoveryBurstPolicy.onReport(report.recoveryStatus != null)
     }
 
     private fun buildInjectTarget(
@@ -573,21 +570,29 @@ class MockLocationService : Service() {
         refreshNotification()
     }
 
-    private fun handleStop() {
+    private fun handleStop(startId: Int) {
+        val stopToken = lifecycleGate.beginStop()
         restorationJob?.cancel()
         restorationJob = serviceScope.launch {
-            controller.onRestorationStarted()
-            stopRandomWalkLoop()
-            stopRouteMovementLoop()
-            stopInjectionLoop()
-            injector.stop()
+            val cleanupStarted = lifecycleGate.runIfCurrent(stopToken) {
+                controller.onRestorationStarted()
+                stopRandomWalkLoop()
+                stopRouteMovementLoop()
+                stopInjectionLoop()
+                injector.stop()
+            }
+            if (!cleanupStarted) {
+                return@launch
+            }
 
             val restorationState = awaitRestorationState()
-            publishInjectorHealth()
-            releaseWakeLock()
-            controller.onServiceStopped(restorationState)
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            lifecycleGate.runIfCurrent(stopToken) {
+                publishInjectorHealth()
+                releaseWakeLock()
+                controller.onServiceStopped(restorationState)
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelfResult(startId)
+            }
         }
     }
 
@@ -792,5 +797,60 @@ class MockLocationService : Service() {
             }
             manager.createNotificationChannel(channel)
         }
+    }
+}
+
+internal class ServiceLifecycleGenerationGate {
+    private var generation = 0L
+
+    @Synchronized
+    fun beginStart(): Long {
+        generation += 1L
+        return generation
+    }
+
+    @Synchronized
+    fun beginStop(): Long {
+        generation += 1L
+        return generation
+    }
+
+    @Synchronized
+    fun runIfCurrent(token: Long, action: () -> Unit): Boolean {
+        if (token != generation) {
+            return false
+        }
+        action()
+        return true
+    }
+}
+
+internal class RecoveryBurstPolicy(
+    private val burstCount: Int,
+) {
+    private var recoveryActive = false
+    private var remaining = 0
+
+    @Synchronized
+    fun onReport(isRecovery: Boolean) {
+        if (isRecovery && !recoveryActive) {
+            remaining = burstCount
+        }
+        recoveryActive = isRecovery
+    }
+
+    @Synchronized
+    fun consumeFastInterval(): Boolean {
+        if (remaining <= 0) {
+            return false
+        }
+        remaining -= 1
+        return true
+    }
+
+    @Synchronized
+    fun reset() {
+        recoveryActive = false
+        remaining = 0
     }
 }

@@ -185,6 +185,67 @@ class CompositeLocationInjectorTest {
     }
 
     @Test
+    fun fusedMockMode_ignoresStaleCallbacksAcrossTrueFalseTrue() {
+        val client = RecordingFusedClient()
+        val injector = FusedLocationInjectorCore(
+            client = client,
+            updateIntervalMs = 60_000L,
+            onError = {},
+        )
+
+        injector.start(TARGET)
+        injector.stop()
+        injector.start(TARGET)
+
+        assertEquals(listOf(true, false, true), client.mockModeCalls)
+        client.completeMockModeSuccessAt(0)
+        assertTrue(com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore.state.value.mockModePending)
+        assertEquals(false, com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore.state.value.mockModeEnabled)
+
+        client.completeMockModeSuccessAt(2)
+        assertEquals(InjectorState.RUNNING, injector.status().state)
+        assertEquals(true, com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore.state.value.mockModeEnabled)
+        assertEquals(false, com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore.state.value.mockModePending)
+
+        client.completeMockModeSuccessAt(1)
+        assertEquals(InjectorState.RUNNING, injector.status().state)
+        assertEquals(true, com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore.state.value.mockModeEnabled)
+    }
+
+    @Test
+    fun fusedRestart_dispatchesWhenOldLocationTaskNeverCompletes() {
+        val client = RecordingFusedClient()
+        val injector = FusedLocationInjectorCore(
+            client = client,
+            updateIntervalMs = 60_000L,
+            onError = {},
+        )
+        val restartedSample = SAMPLE.copy(
+            latitude = 31.0,
+            longitude = 121.0,
+            timestampMillis = 13_000L,
+            elapsedRealtimeNanos = 46_000L,
+        )
+
+        injector.start(TARGET)
+        client.completeMockModeSuccessAt(0)
+        injector.inject(SAMPLE)
+        injector.stop()
+        injector.start(TARGET)
+        client.completeMockModeSuccessAt(2)
+        injector.inject(restartedSample)
+
+        assertEquals(listOf(SAMPLE.latitude, restartedSample.latitude), client.locations.map { it.latitude })
+        client.completeLocationSuccessAt(0)
+        assertTrue(com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore.state.value.lastInjectionPending)
+        assertEquals(null, injector.status().lastInjectedSample)
+
+        client.completeLocationSuccessAt(1)
+        assertEquals(false, com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore.state.value.lastInjectionPending)
+        assertEquals(restartedSample, injector.status().lastInjectedSample)
+    }
+
+    @Test
     fun aggregateStatus_reportsPartialWhenOneChildFails() {
         val failing = StatusInjector(InjectorState.FAILED)
         val healthy = StatusInjector(InjectorState.RUNNING)
@@ -249,10 +310,10 @@ class CompositeLocationInjectorTest {
     private class RecordingFusedClient : FusedMockLocationClient {
         val mockModeCalls = mutableListOf<Boolean>()
         val locations = mutableListOf<FusedMockLocation>()
-        private val mockModeSuccessCallbacks = ArrayDeque<() -> Unit>()
-        private val mockModeFailureCallbacks = ArrayDeque<(Throwable) -> Unit>()
-        private val locationSuccessCallbacks = ArrayDeque<() -> Unit>()
-        private val locationFailureCallbacks = ArrayDeque<(Throwable) -> Unit>()
+        private val mockModeSuccessCallbacks = mutableListOf<(() -> Unit)?>()
+        private val mockModeFailureCallbacks = mutableListOf<((Throwable) -> Unit)?>()
+        private val locationSuccessCallbacks = mutableListOf<(() -> Unit)?>()
+        private val locationFailureCallbacks = mutableListOf<((Throwable) -> Unit)?>()
 
         override fun setMockMode(
             enabled: Boolean,
@@ -275,19 +336,37 @@ class CompositeLocationInjectorTest {
         }
 
         fun completeMockModeSuccess() {
-            mockModeSuccessCallbacks.removeFirst().invoke()
+            completeMockModeSuccessAt(mockModeSuccessCallbacks.indexOfFirst { it != null })
         }
 
-        fun completeMockModeFailure(error: Throwable) {
-            mockModeFailureCallbacks.removeFirst().invoke(error)
+        fun completeMockModeFailure(throwable: Throwable) {
+            val index = mockModeFailureCallbacks.indexOfFirst { it != null }
+            val callback = checkNotNull(mockModeFailureCallbacks[index])
+            mockModeFailureCallbacks[index] = null
+            callback(throwable)
         }
 
         fun completeLocationSuccess() {
-            locationSuccessCallbacks.removeFirst().invoke()
+            completeLocationSuccessAt(locationSuccessCallbacks.indexOfFirst { it != null })
         }
 
-        fun completeLocationFailure(error: Throwable) {
-            locationFailureCallbacks.removeFirst().invoke(error)
+        fun completeLocationFailure(throwable: Throwable) {
+            val index = locationFailureCallbacks.indexOfFirst { it != null }
+            val callback = checkNotNull(locationFailureCallbacks[index])
+            locationFailureCallbacks[index] = null
+            callback(throwable)
+        }
+
+        fun completeMockModeSuccessAt(callIndex: Int) {
+            val callback = mockModeSuccessCallbacks[callIndex] ?: error("mock mode success callback missing")
+            mockModeSuccessCallbacks[callIndex] = null
+            callback()
+        }
+
+        fun completeLocationSuccessAt(callIndex: Int) {
+            val callback = locationSuccessCallbacks[callIndex] ?: error("location success callback missing")
+            locationSuccessCallbacks[callIndex] = null
+            callback()
         }
     }
 

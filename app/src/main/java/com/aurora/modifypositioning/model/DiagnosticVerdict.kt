@@ -133,7 +133,8 @@ fun DiagnosticSnapshot.toDiagnosticVerdict(): DiagnosticVerdict {
         )
     }
 
-    val overwrite = freshProviderLocations().firstOrNull { !it.isMock }
+    val freshProviders = freshProviderLocations()
+    val overwrite = freshProviders.firstOrNull { !it.isMock }
     if (overwrite != null) {
         return DiagnosticVerdict(
             status = DiagnosticVerdictStatus.Warning,
@@ -144,7 +145,7 @@ fun DiagnosticSnapshot.toDiagnosticVerdict(): DiagnosticVerdict {
         )
     }
 
-    val far = freshProviderLocations().firstOrNull { (it.distanceToLastInjectionMeters ?: 0.0) > FAR_FROM_TARGET_METERS }
+    val far = freshProviders.firstOrNull { (it.distanceToLastInjectionMeters ?: 0.0) > FAR_FROM_TARGET_METERS }
     if (far != null) {
         return DiagnosticVerdict(
             status = DiagnosticVerdictStatus.Warning,
@@ -152,6 +153,16 @@ fun DiagnosticSnapshot.toDiagnosticVerdict(): DiagnosticVerdict {
             blockers = emptyList(),
             possibleCauses = listOf("${far.provider} 距注入目标 ${formatDistance(far.distanceToLastInjectionMeters)}"),
             nextSteps = listOf("等待下一轮注入后刷新", "停止后重新开始模拟", "确认目标坐标和校准模式是否正确"),
+        )
+    }
+
+    if (freshProviders.isEmpty()) {
+        return DiagnosticVerdict(
+            status = DiagnosticVerdictStatus.Warning,
+            title = "系统 provider 状态未确认",
+            blockers = emptyList(),
+            possibleCauses = listOf("GPS / Network 均无新鲜 provider 证据, 无法确认系统当前返回的定位"),
+            nextSteps = listOf("等待下一轮注入后刷新诊断", "若仍未确认, 停止后重新开始模拟"),
         )
     }
 

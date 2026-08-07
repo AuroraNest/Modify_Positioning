@@ -29,8 +29,9 @@ class AndroidLocationInjector(
 
     @Volatile
     private var currentTarget: TargetLocation? = null
-    private var providersReady = false
+    private val readyProviders = linkedSetOf<String>()
     private var lastProviderRebuildTimeMillis: Long? = null
+    private var lastProviderRebuildAttemptTimeMillis: Long? = null
     private var state = InjectorState.IDLE
     private var lastSuccessAtMillis: Long? = null
     private var lastFailureAtMillis: Long? = null
@@ -44,8 +45,7 @@ class AndroidLocationInjector(
             return
         }
         state = InjectorState.STARTING
-        rebuildProviders()
-        state = if (providersReady) InjectorState.RUNNING else InjectorState.FAILED
+        ensureProviders(bypassCooldown = true)
     }
 
     override fun updateTarget(target: TargetLocation) {
@@ -68,25 +68,55 @@ class AndroidLocationInjector(
         state = InjectorState.STOPPED
     }
 
-    private fun rebuildProviders() {
+    private fun ensureProviders(bypassCooldown: Boolean = false) {
         val manager = locationManager ?: run {
-            onError("定位服务不可用")
+            publishFailure(InjectorErrorCode.LOCATION_SERVICE_DISABLED, "定位服务不可用")
             return
         }
-        providersReady = false
-        runCatching {
-            addTestProvider(LocationManager.GPS_PROVIDER)
-            addTestProvider(LocationManager.NETWORK_PROVIDER)
-            manager.setTestProviderEnabled(LocationManager.GPS_PROVIDER, true)
-            manager.setTestProviderEnabled(LocationManager.NETWORK_PROVIDER, true)
-            providersReady = true
-            lastProviderRebuildTimeMillis = System.currentTimeMillis()
+        readyProviders.removeAll { provider -> !isProviderReady(manager, provider) }
+        val missingProviders = MOCK_LOCATION_PROVIDERS.filterNot(readyProviders::contains)
+        if (missingProviders.isEmpty()) {
+            state = InjectorState.RUNNING
             lastErrorCode = null
             lastErrorMessage = null
-        }.onFailure {
-            removeProviders()
-            publishFailure(InjectorErrorCode.TEST_PROVIDER_ADD_FAILED, "mock provider 重建失败: ${it.message ?: "未知错误"}")
+            return
         }
+        val rebuildResult = rebuildProviders(manager, missingProviders, bypassCooldown)
+        if (rebuildResult == null && readyProviders.size < MOCK_LOCATION_PROVIDERS.size) {
+            publishProviderAvailability(
+                code = InjectorErrorCode.TEST_PROVIDER_ADD_FAILED,
+                failureDetail = "未就绪: ${missingProviderNames()}",
+            )
+        }
+    }
+
+    private fun rebuildProviders(
+        manager: LocationManager,
+        providers: List<String>,
+        bypassCooldown: Boolean = false,
+    ): ProviderAttemptResult? {
+        val nowMillis = System.currentTimeMillis()
+        if (!bypassCooldown && !shouldAttemptProviderRebuild(lastProviderRebuildAttemptTimeMillis, nowMillis)) {
+            return null
+        }
+        // Cooldown is based on every attempt so a denied provider cannot be rebuilt on every injection tick.
+        lastProviderRebuildAttemptTimeMillis = nowMillis
+        readyProviders.removeAll(providers.toSet())
+        val result = attemptLocationProviders(providers) { provider ->
+            addTestProvider(provider)
+            manager.setTestProviderEnabled(provider, true)
+        }
+        lastProviderRebuildTimeMillis = providerRebuildSuccessTimeMillis(
+            previousSuccessTimeMillis = lastProviderRebuildTimeMillis,
+            attemptTimeMillis = nowMillis,
+            successfulProviders = result.successfulProviders,
+        )
+        readyProviders.addAll(result.successfulProviders)
+        publishProviderAvailability(
+            code = InjectorErrorCode.TEST_PROVIDER_ADD_FAILED,
+            failureDetail = result.failureMessage().takeIf(String::isNotBlank),
+        )
+        return result
     }
 
     @SuppressLint("MissingPermission")
@@ -95,38 +125,52 @@ class AndroidLocationInjector(
             publishFailure(InjectorErrorCode.LOCATION_SERVICE_DISABLED, "定位服务不可用")
             return
         }
-        if (!providersReady || !isProviderReady(manager, LocationManager.GPS_PROVIDER) || !isProviderReady(manager, LocationManager.NETWORK_PROVIDER)) {
-            rebuildProviders()
-        }
-        if (!providersReady) {
-            publishFailure(InjectorErrorCode.PROVIDER_NOT_READY, "mock provider 未就绪或已被移除")
+        ensureProviders()
+        if (readyProviders.isEmpty()) {
             return
         }
 
         val gpsLocation = sample.toGpsLocation()
         val networkLocation = sample.toNetworkLocation()
 
-        runCatching {
-            var providerResult = setProviderLocations(manager, gpsLocation, networkLocation)
-            if (providerResult.successfulProviders.isEmpty()) {
-                error("GPS / Network provider 均注入失败: ${providerResult.failureMessage()}")
-            }
-            val verification = verifyLastKnownLocations(
-                manager = manager,
-                target = TargetLocation(sample.sourceLabel, sample.latitude, sample.longitude),
-                injectionTimeMillis = sample.timestampMillis,
-                providers = providerResult.successfulProviders,
+        var providerResult = setProviderLocations(
+            manager = manager,
+            gpsLocation = gpsLocation,
+            networkLocation = networkLocation,
+            providers = readyProviders.toList(),
+        )
+        readyProviders.removeAll(providerResult.failures.keys)
+        if (providerResult.successfulProviders.isEmpty()) {
+            publishProviderAvailability(
+                code = InjectorErrorCode.TEST_PROVIDER_SET_LOCATION_FAILED,
+                failureDetail = "GPS / Network provider 均注入失败: ${providerResult.failureMessage()}",
             )
-            val recovery = verification.firstOrNull { it.shouldRecover }
-            var reportVerification = verification
-            if (recovery != null) {
-                rebuildProviders()
-                if (!providersReady) {
-                    error("mock provider 重建失败")
-                }
-                providerResult = setProviderLocations(manager, gpsLocation, networkLocation)
+            return
+        }
+        val verification = verifyLastKnownLocations(
+            manager = manager,
+            target = TargetLocation(sample.sourceLabel, sample.latitude, sample.longitude),
+            injectionTimeMillis = sample.timestampMillis,
+            providers = providerResult.successfulProviders,
+        )
+        val recovery = verification.firstOrNull { it.shouldRecover }
+        var reportVerification = verification
+        if (recovery != null) {
+            val rebuildResult = rebuildProviders(manager, listOf(recovery.provider))
+            if (rebuildResult != null) {
+                providerResult = setProviderLocations(
+                    manager = manager,
+                    gpsLocation = gpsLocation,
+                    networkLocation = networkLocation,
+                    providers = readyProviders.toList(),
+                )
+                readyProviders.removeAll(providerResult.failures.keys)
                 if (providerResult.successfulProviders.isEmpty()) {
-                    error("GPS / Network provider 均注入失败: ${providerResult.failureMessage()}")
+                    publishProviderAvailability(
+                        code = InjectorErrorCode.TEST_PROVIDER_SET_LOCATION_FAILED,
+                        failureDetail = "GPS / Network provider 重建后均注入失败: ${providerResult.failureMessage()}",
+                    )
+                    return
                 }
                 reportVerification = verifyLastKnownLocations(
                     manager = manager,
@@ -135,45 +179,39 @@ class AndroidLocationInjector(
                     providers = providerResult.successfulProviders,
                 )
             }
-            val reportProvider = providerResult.successfulProviders.first()
-            val reportLocation = if (reportProvider == LocationManager.GPS_PROVIDER) gpsLocation else networkLocation
-            lastSuccessAtMillis = sample.timestampMillis
-            lastInjectedSample = sample
-            if (providerResult.failures.isEmpty()) {
-                state = InjectorState.RUNNING
-                lastErrorCode = null
-                lastErrorMessage = null
-            } else {
-                publishDegraded(
-                    InjectorErrorCode.TEST_PROVIDER_SET_LOCATION_FAILED,
-                    "部分 mock provider 注入失败: ${providerResult.failureMessage()}; 已保留 ${providerResult.successfulProviders.joinToString()}",
-                )
-            }
-            onInjected(
-                InjectionReport(
-                    provider = reportProvider,
-                    latitude = reportLocation.latitude,
-                    longitude = reportLocation.longitude,
-                    accuracyMeters = reportLocation.accuracy,
-                    timeMillis = reportLocation.time,
-                    providerRebuildTimeMillis = lastProviderRebuildTimeMillis,
-                    verificationMockStatus = reportVerification.toMockStatusText(),
-                    verificationDistanceMeters = reportVerification.verificationDistanceMeters(recovery?.provider),
-                    recoveryStatus = recovery?.recoveryReason,
-                ),
-            )
-        }.onFailure {
-            rebuildProviders()
-            publishFailure(InjectorErrorCode.TEST_PROVIDER_SET_LOCATION_FAILED, "注入失败: ${it.message ?: "未知错误"}")
         }
+        val reportProvider = providerResult.successfulProviders.first()
+        val reportLocation = if (reportProvider == LocationManager.GPS_PROVIDER) gpsLocation else networkLocation
+        lastSuccessAtMillis = sample.timestampMillis
+        lastInjectedSample = sample
+        if (providerResult.failures.isNotEmpty()) {
+            publishProviderAvailability(
+                code = InjectorErrorCode.TEST_PROVIDER_SET_LOCATION_FAILED,
+                failureDetail = providerResult.failureMessage(),
+            )
+        }
+        onInjected(
+            InjectionReport(
+                provider = reportProvider,
+                latitude = reportLocation.latitude,
+                longitude = reportLocation.longitude,
+                accuracyMeters = reportLocation.accuracy,
+                timeMillis = reportLocation.time,
+                providerRebuildTimeMillis = lastProviderRebuildTimeMillis,
+                verificationMockStatus = reportVerification.toMockStatusText(),
+                verificationDistanceMeters = reportVerification.verificationDistanceMeters(recovery?.provider),
+                recoveryStatus = recovery?.recoveryReason,
+            ),
+        )
     }
 
     private fun setProviderLocations(
         manager: LocationManager,
         gpsLocation: Location,
         networkLocation: Location,
+        providers: List<String>,
     ): ProviderAttemptResult {
-        return attemptLocationProviders { provider ->
+        return attemptLocationProviders(providers) { provider ->
             val location = if (provider == LocationManager.GPS_PROVIDER) gpsLocation else networkLocation
             manager.setTestProviderLocation(provider, location)
         }
@@ -228,9 +266,8 @@ class AndroidLocationInjector(
 
     private fun removeProviders() {
         val manager = locationManager ?: return
-        runCatching { manager.removeTestProvider(LocationManager.GPS_PROVIDER) }
-        runCatching { manager.removeTestProvider(LocationManager.NETWORK_PROVIDER) }
-        providersReady = false
+        attemptLocationProviders { provider -> manager.removeTestProvider(provider) }
+        readyProviders.clear()
     }
 
     override fun cleanup() {
@@ -251,6 +288,9 @@ class AndroidLocationInjector(
     }
 
     private fun publishFailure(code: InjectorErrorCode, message: String) {
+        if (state == InjectorState.FAILED && lastErrorCode == code && lastErrorMessage == message) {
+            return
+        }
         state = InjectorState.FAILED
         lastFailureAtMillis = System.currentTimeMillis()
         lastErrorCode = code
@@ -259,11 +299,47 @@ class AndroidLocationInjector(
     }
 
     private fun publishDegraded(code: InjectorErrorCode, message: String) {
+        if (state == InjectorState.DEGRADED && lastErrorCode == code && lastErrorMessage == message) {
+            return
+        }
         state = InjectorState.DEGRADED
         lastFailureAtMillis = System.currentTimeMillis()
         lastErrorCode = code
         lastErrorMessage = message
         onError(message)
+    }
+
+    private fun publishProviderAvailability(
+        code: InjectorErrorCode,
+        failureDetail: String?,
+    ) {
+        when (providerAvailabilityState(readyProviders)) {
+            InjectorState.RUNNING -> {
+                state = InjectorState.RUNNING
+                lastErrorCode = null
+                lastErrorMessage = null
+            }
+
+            InjectorState.DEGRADED -> publishDegraded(
+                code,
+                buildString {
+                    append("部分 mock provider 不可用; 已保留 ${readyProviders.joinToString()}")
+                    failureDetail?.let { append(": $it") }
+                },
+            )
+
+            else -> publishFailure(
+                code,
+                buildString {
+                    append("GPS / Network mock provider 均不可用")
+                    failureDetail?.let { append(": $it") }
+                },
+            )
+        }
+    }
+
+    private fun missingProviderNames(): String {
+        return MOCK_LOCATION_PROVIDERS.filterNot(readyProviders::contains).joinToString()
     }
 
     private fun Location.toVerificationObservation(provider: String): LastKnownObservation {
@@ -301,14 +377,47 @@ internal data class ProviderAttemptResult(
 }
 
 internal fun attemptLocationProviders(operation: (String) -> Unit): ProviderAttemptResult {
+    return attemptLocationProviders(MOCK_LOCATION_PROVIDERS, operation)
+}
+
+internal fun attemptLocationProviders(
+    providers: List<String>,
+    operation: (String) -> Unit,
+): ProviderAttemptResult {
     val successfulProviders = mutableListOf<String>()
     val failures = linkedMapOf<String, Throwable>()
-    listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER).forEach { provider ->
+    providers.forEach { provider ->
         runCatching { operation(provider) }
             .onSuccess { successfulProviders += provider }
             .onFailure { failures[provider] = it }
     }
     return ProviderAttemptResult(successfulProviders, failures)
+}
+
+internal fun providerAvailabilityState(readyProviders: Collection<String>): InjectorState {
+    val readyCount = MOCK_LOCATION_PROVIDERS.count(readyProviders::contains)
+    return when (readyCount) {
+        MOCK_LOCATION_PROVIDERS.size -> InjectorState.RUNNING
+        0 -> InjectorState.FAILED
+        else -> InjectorState.DEGRADED
+    }
+}
+
+internal fun shouldAttemptProviderRebuild(
+    lastAttemptTimeMillis: Long?,
+    nowMillis: Long,
+): Boolean {
+    return lastAttemptTimeMillis == null ||
+        nowMillis < lastAttemptTimeMillis ||
+        nowMillis - lastAttemptTimeMillis >= PROVIDER_REBUILD_COOLDOWN_MS
+}
+
+internal fun providerRebuildSuccessTimeMillis(
+    previousSuccessTimeMillis: Long?,
+    attemptTimeMillis: Long,
+    successfulProviders: Collection<String>,
+): Long? {
+    return if (successfulProviders.isNotEmpty()) attemptTimeMillis else previousSuccessTimeMillis
 }
 
 internal data class TestProviderProfile(
@@ -480,3 +589,5 @@ internal fun List<LastKnownVerification>.verificationDistanceMeters(recoveryProv
 private const val LAST_KNOWN_FRESH_WINDOW_MS = 5_000L
 private const val LAST_KNOWN_TIME_SLOP_MS = 1_000L
 private const val LAST_KNOWN_DISTANCE_RECOVERY_METERS = 75.0
+private val MOCK_LOCATION_PROVIDERS = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+private const val PROVIDER_REBUILD_COOLDOWN_MS = 2_000L

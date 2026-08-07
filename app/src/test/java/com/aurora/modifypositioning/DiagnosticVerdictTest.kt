@@ -60,7 +60,7 @@ class DiagnosticVerdictTest {
     }
 
     @Test
-    fun verdict_doesNotTreatStaleNonMockCacheAsOverwrite() {
+    fun verdict_warnsWhenOnlyProviderReadingIsStale() {
         val staleGps = DiagnosticLocation(
             provider = "gps",
             latitude = 30.0,
@@ -74,9 +74,19 @@ class DiagnosticVerdictTest {
         val snapshot = snapshot(gpsLastKnown = staleGps)
         val verdict = snapshot.toDiagnosticVerdict()
 
-        assertEquals(DiagnosticVerdictStatus.Ok, verdict.status)
+        assertEquals(DiagnosticVerdictStatus.Warning, verdict.status)
+        assertTrue(verdict.title.contains("未确认"))
         assertTrue(snapshot.realLocationOverwriteSummary().contains("旧缓存"))
-        assertTrue(verdict.possibleCauses.any { it.contains("旧缓存") })
+        assertTrue(verdict.possibleCauses.any { it.contains("无新鲜 provider 证据") })
+    }
+
+    @Test
+    fun verdict_warnsWhenProviderReadingsAreMissing() {
+        val verdict = snapshot(gpsLastKnown = null).toDiagnosticVerdict()
+
+        assertEquals(DiagnosticVerdictStatus.Warning, verdict.status)
+        assertTrue(verdict.title.contains("未确认"))
+        assertTrue(verdict.possibleCauses.any { it.contains("无新鲜 provider 证据") })
     }
 
     @Test
@@ -113,7 +123,7 @@ class DiagnosticVerdictTest {
     private fun snapshot(
         isMockAppSelected: Boolean = true,
         missingPermissions: List<String> = emptyList(),
-        gpsLastKnown: DiagnosticLocation? = null,
+        gpsLastKnown: DiagnosticLocation? = FRESH_MOCK_GPS,
         networkLastKnown: DiagnosticLocation? = null,
         fusedMockModeEnabled: Boolean = true,
         fusedMockModePending: Boolean = false,
@@ -205,5 +215,14 @@ class DiagnosticVerdictTest {
 
     private companion object {
         const val NOW = 100_000L
+        val FRESH_MOCK_GPS = DiagnosticLocation(
+            provider = "gps",
+            latitude = 31.0,
+            longitude = 121.0,
+            accuracyMeters = 5f,
+            timeMillis = NOW - 1_000L,
+            isMock = true,
+            distanceToLastInjectionMeters = 0.0,
+        )
     }
 }

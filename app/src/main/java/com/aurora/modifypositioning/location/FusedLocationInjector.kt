@@ -37,6 +37,9 @@ internal class FusedLocationInjectorCore(
     private var mockModeEnabled = false
     private var mockModePending = false
     private var desiredMockMode = false
+    private var mockModeReadyForRequest = false
+    private var activeMockModeRequestId: Long? = null
+    private var nextMockModeRequestId = 0L
     private var lastInjectionTimeMillis: Long? = null
     private var lastInjectionPending = false
     private var pendingSample: LocationSample? = null
@@ -58,15 +61,21 @@ internal class FusedLocationInjectorCore(
         publishStatus()
     }
 
+    @Synchronized
     override fun start(target: TargetLocation) {
         updateTarget(target)
         if (currentTarget == null || client == null) {
             return
         }
+        injectionGeneration++
+        activeLocationRequestId = null
+        lastInjectionPending = false
+        pendingSample = null
         state = InjectorState.STARTING
         setMockMode(true)
     }
 
+    @Synchronized
     override fun updateTarget(target: TargetLocation) {
         if (!target.isValid()) {
             publishError(InjectorErrorCode.UNKNOWN, "fused 目标坐标无效")
@@ -75,6 +84,7 @@ internal class FusedLocationInjectorCore(
         currentTarget = target
     }
 
+    @Synchronized
     override fun pause() {
         if (state == InjectorState.RUNNING) {
             state = InjectorState.DEGRADED
@@ -88,6 +98,7 @@ internal class FusedLocationInjectorCore(
         lastSuccessfulSample = null
         pendingSample = null
         lastInjectionPending = false
+        activeLocationRequestId = null
         setMockMode(false)
         state = InjectorState.STOPPED
     }
@@ -96,49 +107,67 @@ internal class FusedLocationInjectorCore(
         stop()
     }
 
+    @Synchronized
     private fun setMockMode(enabled: Boolean) {
         desiredMockMode = enabled
         val fusedClient = client ?: run {
             publishStatus()
             return
         }
+        val requestId = ++nextMockModeRequestId
+        activeMockModeRequestId = requestId
+        mockModeReadyForRequest = false
         runCatching {
             mockModePending = true
             publishStatus()
             fusedClient.setMockMode(
                 enabled = enabled,
                 onSuccess = mockModeSuccess@{
-                    if (desiredMockMode != enabled) {
-                        return@mockModeSuccess
-                    }
-                    mockModePending = false
-                    mockModeEnabled = enabled
-                    lastError = null
-                    lastErrorCode = null
-                    state = if (enabled) InjectorState.RUNNING else InjectorState.STOPPED
-                    publishStatus()
-                    if (enabled) {
-                        dispatchPendingSample()
-                    }
+                    completeMockModeSuccess(requestId, enabled)
                 },
                 onFailure = mockModeFailure@{ error ->
-                    if (desiredMockMode != enabled) {
-                        return@mockModeFailure
-                    }
-                    mockModePending = false
-                    publishError(
-                        code = InjectorErrorCode.FUSED_MOCK_MODE_FAILED,
-                        message = "fused mock mode ${if (enabled) "开启" else "关闭"}失败: ${error.message ?: "未知错误"}",
-                    )
+                    completeMockModeFailure(requestId, enabled, error)
                 },
             )
         }.onFailure { error ->
-            mockModePending = false
-            publishError(
-                code = InjectorErrorCode.FUSED_MOCK_MODE_FAILED,
-                message = "fused mock mode ${if (enabled) "开启" else "关闭"}失败: ${error.message ?: "未知错误"}",
-            )
+            completeMockModeFailure(requestId, enabled, error)
         }
+    }
+
+    @Synchronized
+    private fun completeMockModeSuccess(requestId: Long, enabled: Boolean) {
+        if (activeMockModeRequestId != requestId) {
+            return
+        }
+        activeMockModeRequestId = null
+        mockModePending = false
+        mockModeEnabled = enabled
+        mockModeReadyForRequest = true
+        lastError = null
+        lastErrorCode = null
+        state = if (enabled) InjectorState.RUNNING else InjectorState.STOPPED
+        publishStatus()
+        if (enabled) {
+            dispatchPendingSample()
+        }
+    }
+
+    @Synchronized
+    private fun completeMockModeFailure(
+        requestId: Long,
+        enabled: Boolean,
+        error: Throwable,
+    ) {
+        if (activeMockModeRequestId != requestId) {
+            return
+        }
+        activeMockModeRequestId = null
+        mockModePending = false
+        mockModeReadyForRequest = false
+        publishError(
+            code = InjectorErrorCode.FUSED_MOCK_MODE_FAILED,
+            message = "fused mock mode ${if (enabled) "开启" else "关闭"}失败: ${error.message ?: "未知错误"}",
+        )
     }
 
     @SuppressLint("MissingPermission")
@@ -149,7 +178,7 @@ internal class FusedLocationInjectorCore(
             publishError(InjectorErrorCode.GOOGLE_PLAY_SERVICES_UNAVAILABLE, "fused client 不可用")
             return
         }
-        if (!mockModeEnabled || !desiredMockMode) {
+        if (!mockModeEnabled || !desiredMockMode || !mockModeReadyForRequest) {
             return
         }
         dispatchPendingSample()
@@ -158,7 +187,7 @@ internal class FusedLocationInjectorCore(
     @Synchronized
     private fun dispatchPendingSample() {
         val fusedClient = client ?: return
-        if (activeLocationRequestId != null || !mockModeEnabled || !desiredMockMode) {
+        if (activeLocationRequestId != null || !mockModeEnabled || !desiredMockMode || !mockModeReadyForRequest) {
             return
         }
         val sample = pendingSample ?: return
@@ -249,6 +278,7 @@ internal class FusedLocationInjectorCore(
         return requestGeneration == injectionGeneration &&
             desiredMockMode &&
             mockModeEnabled &&
+            mockModeReadyForRequest &&
             currentTarget != null
     }
 
@@ -276,6 +306,7 @@ internal class FusedLocationInjectorCore(
         )
     }
 
+    @Synchronized
     override fun status(): InjectorStatus {
         return InjectorStatus(
             id = "fused-location",

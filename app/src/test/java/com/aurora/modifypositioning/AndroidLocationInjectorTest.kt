@@ -7,6 +7,9 @@ import com.aurora.modifypositioning.location.LastKnownVerification
 import com.aurora.modifypositioning.location.LastKnownVerificationStatus
 import com.aurora.modifypositioning.location.attemptLocationProviders
 import com.aurora.modifypositioning.location.evaluateLastKnownVerification
+import com.aurora.modifypositioning.location.providerAvailabilityState
+import com.aurora.modifypositioning.location.providerRebuildSuccessTimeMillis
+import com.aurora.modifypositioning.location.shouldAttemptProviderRebuild
 import com.aurora.modifypositioning.location.testProviderProfile
 import com.aurora.modifypositioning.location.verificationDistanceMeters
 import org.junit.Assert.assertEquals
@@ -33,6 +36,52 @@ class AndroidLocationInjectorTest {
             assertEquals(providers - failedProvider, result.successfulProviders)
             assertEquals(setOf(failedProvider), result.failures.keys)
         }
+    }
+
+    @Test
+    fun providerAvailability_keepsSingleHealthyProviderDegraded() {
+        assertEquals(
+            com.aurora.modifypositioning.location.InjectorState.DEGRADED,
+            providerAvailabilityState(listOf(LocationManager.GPS_PROVIDER)),
+        )
+        assertEquals(
+            com.aurora.modifypositioning.location.InjectorState.FAILED,
+            providerAvailabilityState(emptyList()),
+        )
+    }
+
+    @Test
+    fun providerRebuildCooldown_startsAtFailedAttempt() {
+        val attemptTimeMillis = 1_000L
+        val result = attemptLocationProviders(listOf(LocationManager.NETWORK_PROVIDER)) {
+            error("denied")
+        }
+
+        assertTrue(result.successfulProviders.isEmpty())
+        assertFalse(shouldAttemptProviderRebuild(attemptTimeMillis, attemptTimeMillis + 1_999L))
+        assertTrue(shouldAttemptProviderRebuild(attemptTimeMillis, attemptTimeMillis + 2_000L))
+    }
+
+    @Test
+    fun providerRebuildSuccessTime_onlyAdvancesAfterSuccessfulSetup() {
+        val previousSuccessTimeMillis = 500L
+
+        assertEquals(
+            previousSuccessTimeMillis,
+            providerRebuildSuccessTimeMillis(
+                previousSuccessTimeMillis = previousSuccessTimeMillis,
+                attemptTimeMillis = 1_000L,
+                successfulProviders = emptyList(),
+            ),
+        )
+        assertEquals(
+            1_000L,
+            providerRebuildSuccessTimeMillis(
+                previousSuccessTimeMillis = previousSuccessTimeMillis,
+                attemptTimeMillis = 1_000L,
+                successfulProviders = listOf(LocationManager.GPS_PROVIDER),
+            ),
+        )
     }
 
     @Test
