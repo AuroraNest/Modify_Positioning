@@ -5,6 +5,7 @@ import android.location.LocationManager
 import com.aurora.modifypositioning.location.LastKnownObservation
 import com.aurora.modifypositioning.location.LastKnownVerification
 import com.aurora.modifypositioning.location.LastKnownVerificationStatus
+import com.aurora.modifypositioning.location.attemptLocationProviders
 import com.aurora.modifypositioning.location.evaluateLastKnownVerification
 import com.aurora.modifypositioning.location.testProviderProfile
 import com.aurora.modifypositioning.location.verificationDistanceMeters
@@ -14,6 +15,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AndroidLocationInjectorTest {
+
+    @Test
+    fun providerAttempts_continueAfterEitherProviderFails() {
+        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+
+        providers.forEach { failedProvider ->
+            val attemptedProviders = mutableListOf<String>()
+            val result = attemptLocationProviders { provider ->
+                attemptedProviders += provider
+                if (provider == failedProvider) {
+                    error("denied")
+                }
+            }
+
+            assertEquals(providers, attemptedProviders)
+            assertEquals(providers - failedProvider, result.successfulProviders)
+            assertEquals(setOf(failedProvider), result.failures.keys)
+        }
+    }
 
     @Test
     fun verification_requestsRecoveryForFreshNonMockFarLocation() {

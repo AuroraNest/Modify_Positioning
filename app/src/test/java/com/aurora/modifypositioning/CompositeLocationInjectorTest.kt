@@ -126,6 +126,65 @@ class CompositeLocationInjectorTest {
     }
 
     @Test
+    fun fusedInjection_coalescesToLatestSampleWhileTaskIsInFlight() {
+        val client = RecordingFusedClient()
+        val injector = FusedLocationInjectorCore(
+            client = client,
+            updateIntervalMs = 60_000L,
+            onError = {},
+        )
+        val secondSample = SAMPLE.copy(
+            latitude = 31.0,
+            longitude = 121.0,
+            timestampMillis = 13_000L,
+            elapsedRealtimeNanos = 46_000L,
+        )
+
+        injector.start(TARGET)
+        client.completeMockModeSuccess()
+        injector.inject(SAMPLE)
+        injector.inject(secondSample)
+
+        assertEquals(listOf(SAMPLE.latitude), client.locations.map { it.latitude })
+
+        client.completeLocationSuccess()
+        val firstCompletion = com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore.state.value
+        assertEquals(SAMPLE.timestampMillis, firstCompletion.lastInjectionTimeMillis)
+        assertTrue(firstCompletion.lastInjectionPending)
+        assertEquals(SAMPLE, injector.status().lastInjectedSample)
+        assertEquals(listOf(SAMPLE.latitude, secondSample.latitude), client.locations.map { it.latitude })
+
+        client.completeLocationSuccess()
+        val secondCompletion = com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore.state.value
+        assertEquals(false, secondCompletion.lastInjectionPending)
+        assertEquals(secondSample.timestampMillis, secondCompletion.lastInjectionTimeMillis)
+        assertEquals(secondSample.latitude, secondCompletion.lastSuccessfulLatitude!!, 0.0)
+        assertEquals(secondSample.longitude, secondCompletion.lastSuccessfulLongitude!!, 0.0)
+        assertEquals(secondSample, injector.status().lastInjectedSample)
+    }
+
+    @Test
+    fun fusedStop_ignoresLateLocationSuccess() {
+        val client = RecordingFusedClient()
+        val injector = FusedLocationInjectorCore(
+            client = client,
+            updateIntervalMs = 60_000L,
+            onError = {},
+        )
+
+        injector.start(TARGET)
+        client.completeMockModeSuccess()
+        injector.inject(SAMPLE)
+        injector.stop()
+        client.completeLocationSuccess()
+
+        val diagnostics = com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore.state.value
+        assertEquals(InjectorState.STOPPED, injector.status().state)
+        assertEquals(null, injector.status().lastSuccessAtMillis)
+        assertEquals(null, diagnostics.lastInjectionTimeMillis)
+    }
+
+    @Test
     fun aggregateStatus_reportsPartialWhenOneChildFails() {
         val failing = StatusInjector(InjectorState.FAILED)
         val healthy = StatusInjector(InjectorState.RUNNING)

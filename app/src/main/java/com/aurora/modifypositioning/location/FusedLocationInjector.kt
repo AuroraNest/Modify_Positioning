@@ -33,13 +33,16 @@ internal class FusedLocationInjectorCore(
     @Volatile
     private var currentTarget: TargetLocation? = null
     @Volatile
-    private var latestSample: LocationSample? = null
+    private var lastSuccessfulSample: LocationSample? = null
     private var mockModeEnabled = false
     private var mockModePending = false
     private var desiredMockMode = false
     private var lastInjectionTimeMillis: Long? = null
     private var lastInjectionPending = false
-    private var lastInjectionRequestId = 0L
+    private var pendingSample: LocationSample? = null
+    private var activeLocationRequestId: Long? = null
+    private var nextLocationRequestId = 0L
+    private var injectionGeneration = 0L
     private var lastSuccessfulLatitude: Double? = null
     private var lastSuccessfulLongitude: Double? = null
     private var lastError: String? = null
@@ -78,9 +81,12 @@ internal class FusedLocationInjectorCore(
         }
     }
 
+    @Synchronized
     override fun stop() {
+        injectionGeneration++
         currentTarget = null
-        latestSample = null
+        lastSuccessfulSample = null
+        pendingSample = null
         lastInjectionPending = false
         setMockMode(false)
         state = InjectorState.STOPPED
@@ -112,7 +118,7 @@ internal class FusedLocationInjectorCore(
                     state = if (enabled) InjectorState.RUNNING else InjectorState.STOPPED
                     publishStatus()
                     if (enabled) {
-                        latestSample?.let { inject(it) }
+                        dispatchPendingSample()
                     }
                 },
                 onFailure = mockModeFailure@{ error ->
@@ -136,15 +142,27 @@ internal class FusedLocationInjectorCore(
     }
 
     @SuppressLint("MissingPermission")
+    @Synchronized
     override fun inject(sample: LocationSample) {
-        latestSample = sample
-        val fusedClient = client ?: run {
+        pendingSample = sample
+        client ?: run {
             publishError(InjectorErrorCode.GOOGLE_PLAY_SERVICES_UNAVAILABLE, "fused client 不可用")
             return
         }
-        if (!mockModeEnabled) {
+        if (!mockModeEnabled || !desiredMockMode) {
             return
         }
+        dispatchPendingSample()
+    }
+
+    @Synchronized
+    private fun dispatchPendingSample() {
+        val fusedClient = client ?: return
+        if (activeLocationRequestId != null || !mockModeEnabled || !desiredMockMode) {
+            return
+        }
+        val sample = pendingSample ?: return
+        pendingSample = null
 
         val location = FusedMockLocation(
             provider = LocationManager.GPS_PROVIDER,
@@ -161,37 +179,77 @@ internal class FusedLocationInjectorCore(
             bearingAccuracyDegrees = sample.bearingAccuracyDegrees,
         )
 
+        val requestId = ++nextLocationRequestId
+        val requestGeneration = injectionGeneration
+        activeLocationRequestId = requestId
+        lastInjectionPending = true
+        publishStatus()
         runCatching {
-            val requestId = ++lastInjectionRequestId
-            lastInjectionPending = true
-            publishStatus()
             fusedClient.setMockLocation(
                 location = location,
                 onSuccess = locationSuccess@{
-                    if (requestId != lastInjectionRequestId) {
-                        return@locationSuccess
-                    }
-                    lastInjectionPending = false
-                    lastInjectionTimeMillis = sample.timestampMillis
-                    lastSuccessfulLatitude = sample.latitude
-                    lastSuccessfulLongitude = sample.longitude
-                    lastError = null
-                    lastErrorCode = null
-                    state = InjectorState.RUNNING
-                    publishStatus()
+                    completeLocationSuccess(requestId, requestGeneration, sample)
                 },
                 onFailure = locationFailure@{ error ->
-                    if (requestId != lastInjectionRequestId) {
-                        return@locationFailure
-                    }
-                    lastInjectionPending = false
-                    publishError(InjectorErrorCode.FUSED_SET_LOCATION_FAILED, "fused 注入失败: ${error.message ?: "未知错误"}")
+                    completeLocationFailure(requestId, requestGeneration, error)
                 },
             )
         }.onFailure { error ->
-            lastInjectionPending = false
+            completeLocationFailure(requestId, requestGeneration, error)
+        }
+    }
+
+    @Synchronized
+    private fun completeLocationSuccess(
+        requestId: Long,
+        requestGeneration: Long,
+        sample: LocationSample,
+    ) {
+        if (activeLocationRequestId != requestId) {
+            return
+        }
+        activeLocationRequestId = null
+        lastInjectionPending = false
+        if (isCurrentInjection(requestGeneration)) {
+            lastInjectionTimeMillis = sample.timestampMillis
+            lastSuccessfulLatitude = sample.latitude
+            lastSuccessfulLongitude = sample.longitude
+            lastSuccessfulSample = sample
+            lastError = null
+            lastErrorCode = null
+            state = InjectorState.RUNNING
+        }
+        dispatchPendingSample()
+        if (activeLocationRequestId == null) {
+            publishStatus()
+        }
+    }
+
+    @Synchronized
+    private fun completeLocationFailure(
+        requestId: Long,
+        requestGeneration: Long,
+        error: Throwable,
+    ) {
+        if (activeLocationRequestId != requestId) {
+            return
+        }
+        activeLocationRequestId = null
+        lastInjectionPending = false
+        if (isCurrentInjection(requestGeneration)) {
             publishError(InjectorErrorCode.FUSED_SET_LOCATION_FAILED, "fused 注入失败: ${error.message ?: "未知错误"}")
         }
+        dispatchPendingSample()
+        if (activeLocationRequestId == null) {
+            publishStatus()
+        }
+    }
+
+    private fun isCurrentInjection(requestGeneration: Long): Boolean {
+        return requestGeneration == injectionGeneration &&
+            desiredMockMode &&
+            mockModeEnabled &&
+            currentTarget != null
     }
 
     private fun publishError(code: InjectorErrorCode, message: String) {
@@ -227,7 +285,7 @@ internal class FusedLocationInjectorCore(
             lastFailureAtMillis = lastFailureAtMillis,
             lastErrorCode = lastErrorCode,
             lastErrorMessage = lastError,
-            lastInjectedSample = latestSample,
+            lastInjectedSample = lastSuccessfulSample,
         )
     }
 
