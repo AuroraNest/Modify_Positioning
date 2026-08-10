@@ -21,7 +21,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.aurora.modifypositioning.data.FavoriteLocationRepository
 import com.aurora.modifypositioning.data.FallbackPlaceSearchRemote
 import com.aurora.modifypositioning.data.MapPreferencesStore
-import com.aurora.modifypositioning.data.AMapWebPlaceSearchRepository
 import com.aurora.modifypositioning.data.NominatimPlaceSearchRepository
 import com.aurora.modifypositioning.data.NominatimRemoteClient
 import com.aurora.modifypositioning.data.PhotonPlaceSearchRemoteClient
@@ -38,7 +37,6 @@ import com.aurora.modifypositioning.model.RouteInputMode
 import com.aurora.modifypositioning.model.SelectionSource
 import com.aurora.modifypositioning.model.TargetLocation
 import com.aurora.modifypositioning.model.TravelMode
-import com.aurora.modifypositioning.model.effectiveAmapWebKey
 import com.aurora.modifypositioning.service.MockLocationService
 import com.aurora.modifypositioning.ui.DiagnosticScreen
 import com.aurora.modifypositioning.ui.MainControlScreen
@@ -107,23 +105,11 @@ class MainActivity : ComponentActivity() {
                     ),
                 )
             }
-            val amapPlaceSearchRepository = remember {
-                AMapWebPlaceSearchRepository(
-                    apiKeyProvider = {
-                        effectiveAmapWebKey(
-                            runtimeWebKey = mapPreferencesStore.getAmapWebKey(),
-                            buildWebKey = BuildConfig.AMAP_WEB_API_KEY,
-                        )
-                    },
-                )
-            }
-
             val mapViewModel: MapControlViewModel = viewModel(
                 factory = MapControlViewModelFactory(
                     mapPreferencesStore = mapPreferencesStore,
                     favoriteRepository = favoriteRepository,
-                    osmPlaceSearchRepository = osmPlaceSearchRepository,
-                    amapPlaceSearchRepository = amapPlaceSearchRepository,
+                    placeSearchRepository = osmPlaceSearchRepository,
                     controller = controller,
                 ),
             )
@@ -354,7 +340,7 @@ class MainActivity : ComponentActivity() {
                                 onMapProviderChanged = { mapViewModel.setMapProvider(it) },
                                 onAdvancedSettingsVisibleChanged = { mapViewModel.setAdvancedSettingsVisible(it) },
                                 onAmapAndroidKeyChanged = { mapViewModel.onAmapAndroidKeyChanged(it) },
-                                onAmapWebKeyChanged = { mapViewModel.onAmapWebKeyChanged(it) },
+                                onAmapPrivacyAcceptedChanged = { mapViewModel.onAmapPrivacyAcceptedChanged(it) },
                                 onUseSearchTarget = { mapViewModel.applyLastSearchTarget() },
                                 onUseMapCenterTarget = { mapViewModel.applyMapCenterAsTarget() },
                                 onCalibrationModeChanged = { mapViewModel.setCalibrationMode(it) },

@@ -34,7 +34,7 @@ Modify Positioning 是一个无 Root Android 虚拟定位 App, 使用 Android �
 - 通道级容错: GPS/Network 或 Fused 单通道失败时继续运行健康通道并显示 partial warning; 全部失败才进入 Error, 健康恢复后清除 warning.
 - 旅行剧本模型: 内置 Los Angeles Classic Day 和 New York Classic Day preset, 用于后续旅行/城市测试模板.
 - 诊断页: 显示设备厂商/型号, Android/API, App 版本, overall/per-injector 状态, mock app, 权限, last known 和 Fused 状态.
-- OSM 默认地图: 默认使用 OSM/Nominatim/Photon, 高德地图和高德 Web Key 是高级可选项.
+- OSM 默认地图: OSM 是默认建议, 高德底图仅作为中国大陆可选项; 地点搜索统一使用 OSM/Nominatim/Photon.
 
 ## 架构
 
@@ -148,22 +148,11 @@ app/build/outputs/apk/release/app-release-unsigned.apk
 
 ## 高德地图可选配置
 
-默认地图源是 OSM. 高德地图是高级选项, 未配置 Key 时 App 会继续使用 OSM.
+默认地图源和建议选项是 OSM. 高德底图仅适合中国大陆, 未配置时 App 保持 OSM.
 
-方式 1, 写入 `local.properties`:
+如需高德底图, 用户需自行申请与本 App Package Name 和签名 SHA1 匹配的 [Android Maps SDK Key](https://lbs.amap.com/api/maps-sdk-for-android/guide/create-project/get-key), 然后在 App 的高德地图设置中填写这一个 Android Key, 阅读并明确同意高德开放平台隐私权政策. Key 仅保存在本机 DataStore, 不写入 APK; 地点搜索继续由 OSM 提供.
 
-```properties
-AMAP_API_KEY=your_android_key
-AMAP_WEB_API_KEY=your_web_key
-```
-
-方式 2, 使用 Gradle property:
-
-```bash
-./gradlew assembleDebug -PAMAP_API_KEY=your_android_key -PAMAP_WEB_API_KEY=your_web_key
-```
-
-方式 3, 在 App 高级设置中为本机填写高德 Android Key 和 Web Key.
+OSM 和高德只在地图显示与选点坐标转换边界不同. 确认点位后都会产生 canonical WGS84 目标, 并进入相同的 `MapControlViewModel.applyTarget -> MockController/MapPreferencesStore -> MockLocationService` 流程.
 
 ## 诊断
 
@@ -303,6 +292,7 @@ Keywords: Android mock location, fake GPS, virtual location, location simulator,
 - Provider health is channel-aware: one failed channel keeps healthy channels running with a partial warning; all failed channels enter Error; recovery clears the warning.
 - Travel scenario model includes Los Angeles Classic Day and New York Classic Day presets for future city-trip testing.
 - Diagnostics show device manufacturer/model, Android/API, app version, overall/per-injector health, permissions, last known locations and Fused state.
+- OSM is the default and recommended map. Amap is an optional mainland-China basemap using one user-supplied Android Maps SDK Key stored locally in the app; both basemaps feed the same confirmed target pipeline, while place search remains OSM-based.
 
 ## Architecture
 

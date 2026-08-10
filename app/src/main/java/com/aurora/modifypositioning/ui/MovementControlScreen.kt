@@ -53,6 +53,7 @@ import com.amap.api.maps.model.Marker
 import com.amap.api.maps.model.MarkerOptions
 import com.amap.api.maps.model.Polyline
 import com.amap.api.maps.model.PolylineOptions
+import com.aurora.modifypositioning.domain.calibration.MainlandCoordinateCalibrator
 import com.aurora.modifypositioning.model.MapProvider
 import com.aurora.modifypositioning.model.MovementPageTab
 import com.aurora.modifypositioning.model.MovementPoint
@@ -194,7 +195,8 @@ fun MovementControlScreen(
                     trace = uiState.tracePoints,
                     route = activeRoutePoints,
                     mapProvider = uiState.mapProvider,
-                    effectiveAmapAndroidKey = uiState.effectiveAmapAndroidKey,
+                    amapAndroidKey = uiState.amapAndroidKey,
+                    amapPrivacyAccepted = uiState.amapPrivacyAccepted,
                     onMapTouchStateChanged = { interacting ->
                         mapInteracting = interacting
                     },
@@ -219,6 +221,11 @@ fun MovementControlScreen(
                 searchError = uiState.searchError,
                 onQueryChanged = onSearchQueryChanged,
                 onSelectSuggestion = onSearchSuggestionSelected,
+            )
+            Text(
+                text = "地点搜索统一由 OSM 提供, 与当前底图选择无关",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             if (uiState.selectedTab != MovementPageTab.RANDOM_WALK) {
@@ -520,17 +527,18 @@ private fun MovementMap(
     trace: List<MovementPoint>,
     route: List<RoutePoint>,
     mapProvider: MapProvider,
-    effectiveAmapAndroidKey: String,
+    amapAndroidKey: String,
+    amapPrivacyAccepted: Boolean,
     onMapTouchStateChanged: (Boolean) -> Unit,
     onCenterChanged: (Double, Double) -> Unit,
 ) {
-    if (mapProvider == MapProvider.AMAP && effectiveAmapAndroidKey.isNotBlank()) {
+    if (mapProvider == MapProvider.AMAP && amapAndroidKey.isNotBlank() && amapPrivacyAccepted) {
         MovementAMap(
             currentLat = currentLat,
             currentLng = currentLng,
             trace = trace,
             route = route,
-            effectiveAmapAndroidKey = effectiveAmapAndroidKey,
+            amapAndroidKey = amapAndroidKey,
             onMapTouchStateChanged = onMapTouchStateChanged,
             onCenterChanged = onCenterChanged,
         )
@@ -552,11 +560,12 @@ private fun MovementAMap(
     currentLng: Double,
     trace: List<MovementPoint>,
     route: List<RoutePoint>,
-    effectiveAmapAndroidKey: String,
+    amapAndroidKey: String,
     onMapTouchStateChanged: (Boolean) -> Unit,
     onCenterChanged: (Double, Double) -> Unit,
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
+    val coordinateCalibrator = remember { MainlandCoordinateCalibrator() }
     var mapViewRef by remember { mutableStateOf<AMapView?>(null) }
     var aMapRef by remember { mutableStateOf<AMap?>(null) }
     var currentMarker by remember { mutableStateOf<Marker?>(null) }
@@ -589,11 +598,14 @@ private fun MovementAMap(
             .fillMaxSize()
             .clip(RoundedCornerShape(8.dp)),
         factory = { context ->
-            MapsInitializer.setApiKey(effectiveAmapAndroidKey)
+            MapsInitializer.updatePrivacyShow(context, true, true)
+            MapsInitializer.updatePrivacyAgree(context, true)
+            MapsInitializer.setApiKey(amapAndroidKey.trim())
             AMapView(context).apply {
                 onCreate(Bundle())
                 val aMap = map
-                val start = LatLng(currentLat, currentLng)
+                val displayStart = coordinateCalibrator.wgs84ToGcj02(currentLat, currentLng)
+                val start = LatLng(displayStart.first, displayStart.second)
                 aMap.uiSettings.isZoomControlsEnabled = false
                 aMap.uiSettings.isRotateGesturesEnabled = false
                 aMap.uiSettings.isTiltGesturesEnabled = false
@@ -609,14 +621,20 @@ private fun MovementAMap(
                     PolylineOptions()
                         .color(AndroidColor.parseColor("#1E6091"))
                         .width(12f)
-                        .addAll(route.map { LatLng(it.lat, it.lng) }),
+                        .addAll(route.map {
+                            val display = coordinateCalibrator.wgs84ToGcj02(it.lat, it.lng)
+                            LatLng(display.first, display.second)
+                        }),
                 )
 
                 traceLine = aMap.addPolyline(
                     PolylineOptions()
                         .color(AndroidColor.parseColor("#D62828"))
                         .width(10f)
-                        .addAll(trace.map { LatLng(it.lat, it.lng) }),
+                        .addAll(trace.map {
+                            val display = coordinateCalibrator.wgs84ToGcj02(it.lat, it.lng)
+                            LatLng(display.first, display.second)
+                        }),
                 )
 
                 aMap.setOnCameraChangeListener(
@@ -631,13 +649,18 @@ private fun MovementAMap(
                                 skipNextCameraEvent = false
                                 return
                             }
-                            onCenterChanged(position.target.latitude, position.target.longitude)
+                            val canonical = coordinateCalibrator.gcj02ToWgs84(
+                                position.target.latitude,
+                                position.target.longitude,
+                            )
+                            onCenterChanged(canonical.first, canonical.second)
                         }
                     },
                 )
 
                 aMap.setOnMapClickListener { latLng ->
-                    onCenterChanged(latLng.latitude, latLng.longitude)
+                    val canonical = coordinateCalibrator.gcj02ToWgs84(latLng.latitude, latLng.longitude)
+                    onCenterChanged(canonical.first, canonical.second)
                     skipNextCameraEvent = true
                     aMap.animateCamera(CameraUpdateFactory.newLatLng(latLng))
                 }
@@ -659,7 +682,8 @@ private fun MovementAMap(
         },
         update = {
             val aMap = aMapRef
-            val currentPosition = LatLng(currentLat, currentLng)
+            val displayCurrent = coordinateCalibrator.wgs84ToGcj02(currentLat, currentLng)
+            val currentPosition = LatLng(displayCurrent.first, displayCurrent.second)
             val marker = currentMarker
             if (marker == null && aMap != null) {
                 currentMarker = aMap.addMarker(
@@ -670,8 +694,14 @@ private fun MovementAMap(
             } else {
                 marker?.position = currentPosition
             }
-            traceLine?.points = trace.map { LatLng(it.lat, it.lng) }
-            routeLine?.points = route.map { LatLng(it.lat, it.lng) }
+            traceLine?.points = trace.map {
+                val display = coordinateCalibrator.wgs84ToGcj02(it.lat, it.lng)
+                LatLng(display.first, display.second)
+            }
+            routeLine?.points = route.map {
+                val display = coordinateCalibrator.wgs84ToGcj02(it.lat, it.lng)
+                LatLng(display.first, display.second)
+            }
         },
         onRelease = { mapView ->
             // 某些机型销毁时会触发高德 native 崩溃, 先仅暂停以保证切页稳定.

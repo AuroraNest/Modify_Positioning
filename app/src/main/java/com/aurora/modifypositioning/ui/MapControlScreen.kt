@@ -22,6 +22,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
@@ -45,8 +46,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -57,6 +61,7 @@ import com.amap.api.maps.CameraUpdateFactory
 import com.amap.api.maps.MapsInitializer
 import com.amap.api.maps.MapView as AMapView
 import com.amap.api.maps.model.LatLng
+import com.aurora.modifypositioning.domain.calibration.MainlandCoordinateCalibrator
 import com.aurora.modifypositioning.model.CoordinateCalibrationMode
 import com.aurora.modifypositioning.model.DiagnosticLocation
 import com.aurora.modifypositioning.model.DiagnosticSnapshot
@@ -97,7 +102,7 @@ fun MapControlScreen(
     onMapProviderChanged: (MapProvider) -> Unit,
     onAdvancedSettingsVisibleChanged: (Boolean) -> Unit,
     onAmapAndroidKeyChanged: (String) -> Unit,
-    onAmapWebKeyChanged: (String) -> Unit,
+    onAmapPrivacyAcceptedChanged: (Boolean) -> Unit,
     onUseSearchTarget: () -> Unit,
     onUseMapCenterTarget: () -> Unit,
     onCalibrationModeChanged: (CoordinateCalibrationMode) -> Unit,
@@ -114,8 +119,10 @@ fun MapControlScreen(
     onOpenDiagnostic: () -> Unit,
     onCameraIdle: (Double, Double, Float) -> Unit,
 ) {
+    val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
+    val coordinateCalibrator = remember { MainlandCoordinateCalibrator() }
     var aMapViewRef by remember { mutableStateOf<AMapView?>(null) }
     var aMapRef by remember { mutableStateOf<AMap?>(null) }
     var osmMapViewRef by remember { mutableStateOf<OsmMapView?>(null) }
@@ -176,7 +183,11 @@ fun MapControlScreen(
 
         if (uiState.mapProvider == MapProvider.AMAP) {
             val aMap = aMapRef ?: return@LaunchedEffect
-            val desired = LatLng(uiState.selectedTarget.latitude, uiState.selectedTarget.longitude)
+            val displayTarget = coordinateCalibrator.wgs84ToGcj02(
+                uiState.selectedTarget.latitude,
+                uiState.selectedTarget.longitude,
+            )
+            val desired = LatLng(displayTarget.first, displayTarget.second)
             val camera = aMap.cameraPosition ?: return@LaunchedEffect
             val current = camera.target
             val shouldMove =
@@ -271,6 +282,11 @@ fun MapControlScreen(
                     onQueryChanged = onSearchQueryChanged,
                     onSelectSuggestion = onSuggestionSelected,
                 )
+                Text(
+                    text = "地点搜索统一由 OSM 提供, 确认后进入同一目标定位流程",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
 
                 Card(
                     modifier = Modifier
@@ -280,12 +296,23 @@ fun MapControlScreen(
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                 ) {
                     Box(modifier = Modifier.fillMaxSize()) {
-                        if (uiState.mapProvider == MapProvider.AMAP) {
+                        if (
+                            uiState.mapProvider == MapProvider.AMAP &&
+                            uiState.isAmapAndroidAvailable &&
+                            uiState.amapPrivacyAccepted
+                        ) {
                             AMapPanel(
                                 uiState = uiState,
+                                coordinateCalibrator = coordinateCalibrator,
                                 onMapReady = { mapView, aMap ->
                                     aMapViewRef = mapView
                                     aMapRef = aMap
+                                },
+                                onMapReleased = { mapView ->
+                                    if (aMapViewRef === mapView) {
+                                        aMapViewRef = null
+                                        aMapRef = null
+                                    }
                                 },
                                 onMapTouchStateChanged = { interacting ->
                                     mapInteracting = interacting
@@ -350,11 +377,14 @@ fun MapControlScreen(
                 if (uiState.showAdvancedSettings) {
                     AMapAdvancedSettingsCard(
                         androidKey = uiState.amapAndroidKey,
-                        webKey = uiState.amapWebKey,
-                        hasBuildAndroidKey = uiState.isAmapAndroidAvailable && uiState.amapAndroidKey.isBlank(),
-                        hasBuildWebKey = uiState.isAmapWebSearchAvailable && uiState.amapWebKey.isBlank(),
+                        privacyAccepted = uiState.amapPrivacyAccepted,
                         onAndroidKeyChanged = onAmapAndroidKeyChanged,
-                        onWebKeyChanged = onAmapWebKeyChanged,
+                        onPrivacyAcceptedChanged = { accepted ->
+                            if (!accepted) {
+                                MapsInitializer.updatePrivacyAgree(context, false)
+                            }
+                            onAmapPrivacyAcceptedChanged(accepted)
+                        },
                     )
                 }
 
@@ -658,15 +688,15 @@ private fun TargetControlPanel(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 ProviderButton(
-                    label = "高德",
-                    selected = uiState.mapProvider == MapProvider.AMAP,
-                    onClick = { onMapProviderChanged(MapProvider.AMAP) },
+                    label = "OSM (默认)",
+                    selected = uiState.mapProvider == MapProvider.OSM,
+                    onClick = { onMapProviderChanged(MapProvider.OSM) },
                     modifier = Modifier.weight(1f),
                 )
                 ProviderButton(
-                    label = "OSM",
-                    selected = uiState.mapProvider == MapProvider.OSM,
-                    onClick = { onMapProviderChanged(MapProvider.OSM) },
+                    label = "高德 (大陆)",
+                    selected = uiState.mapProvider == MapProvider.AMAP,
+                    onClick = { onMapProviderChanged(MapProvider.AMAP) },
                     modifier = Modifier.weight(1f),
                 )
                 FilledTonalButton(
@@ -679,7 +709,7 @@ private fun TargetControlPanel(
             }
 
             Text(
-                text = "中心候选 ${formatCoord(uiState.mapCenterCandidate.latitude)}, ${formatCoord(uiState.mapCenterCandidate.longitude)} | 搜索 ${uiState.searchRequestCount} 次",
+                text = "OSM 为默认建议, 高德仅适合中国大陆. 中心候选 ${formatCoord(uiState.mapCenterCandidate.latitude)}, ${formatCoord(uiState.mapCenterCandidate.longitude)} | 搜索 ${uiState.searchRequestCount} 次",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -689,7 +719,7 @@ private fun TargetControlPanel(
                 onModeChanged = onCalibrationModeChanged,
             )
 
-            if (!uiState.isAmapAndroidAvailable || (uiState.mapProvider == MapProvider.AMAP && !uiState.isAmapWebSearchAvailable)) {
+            if (!uiState.isAmapAndroidAvailable || !uiState.amapPrivacyAccepted) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp),
@@ -697,9 +727,9 @@ private fun TargetControlPanel(
                 ) {
                     Text(
                         text = if (!uiState.isAmapAndroidAvailable) {
-                            "高德底图需要 Android Key, 可先使用 OSM"
+                            "高德底图需要用户自行申请并在本机填写 Android Maps SDK Key, 当前保持 OSM"
                         } else {
-                            "高德搜索需要 Web Key, 底图不受影响"
+                            "使用高德前需阅读并明确同意高德开放平台隐私权政策, 当前保持 OSM"
                         },
                         modifier = Modifier.padding(10.dp),
                         color = Color(0xFF7A4A00),
@@ -826,7 +856,9 @@ private fun CommandDock(
 @Composable
 private fun AMapPanel(
     uiState: MapControlUiState,
+    coordinateCalibrator: MainlandCoordinateCalibrator,
     onMapReady: (AMapView, AMap) -> Unit,
+    onMapReleased: (AMapView) -> Unit,
     onMapTouchStateChanged: (Boolean) -> Unit,
     onCameraChanged: (Double, Double, Float) -> Unit,
 ) {
@@ -840,9 +872,10 @@ private fun AMapPanel(
             )
             .clip(RoundedCornerShape(8.dp)),
         factory = { context ->
-            if (uiState.effectiveAmapAndroidKey.isNotBlank()) {
-                MapsInitializer.setApiKey(uiState.effectiveAmapAndroidKey)
-            }
+            MapsInitializer.updatePrivacyShow(context, true, true)
+            MapsInitializer.updatePrivacyAgree(context, true)
+            MapsInitializer.setApiKey(uiState.amapAndroidKey.trim())
+            val displayCamera = coordinateCalibrator.wgs84ToGcj02(uiState.camera.lat, uiState.camera.lng)
             AMapView(context).apply {
                 onCreate(Bundle())
                 val aMap = map
@@ -851,7 +884,7 @@ private fun AMapPanel(
                 aMap.uiSettings.isTiltGesturesEnabled = false
                 aMap.moveCamera(
                     CameraUpdateFactory.newLatLngZoom(
-                        LatLng(uiState.camera.lat, uiState.camera.lng),
+                        LatLng(displayCamera.first, displayCamera.second),
                         uiState.camera.zoom,
                     ),
                 )
@@ -863,9 +896,13 @@ private fun AMapPanel(
 
                         override fun onCameraChangeFinish(cameraPosition: com.amap.api.maps.model.CameraPosition?) {
                             val position = cameraPosition ?: return
-                            onCameraChanged(
+                            val canonical = coordinateCalibrator.gcj02ToWgs84(
                                 position.target.latitude,
                                 position.target.longitude,
+                            )
+                            onCameraChanged(
+                                canonical.first,
+                                canonical.second,
                                 position.zoom,
                             )
                         }
@@ -891,6 +928,7 @@ private fun AMapPanel(
         onRelease = { mapView ->
             // 某些机型销毁时会触发高德 native 崩溃, 先仅暂停以保证切页稳定.
             onMapTouchStateChanged(false)
+            onMapReleased(mapView)
             mapView.onPause()
         },
     )
@@ -982,38 +1020,58 @@ private fun OSMPanel(
 @Composable
 private fun AMapAdvancedSettingsCard(
     androidKey: String,
-    webKey: String,
-    hasBuildAndroidKey: Boolean,
-    hasBuildWebKey: Boolean,
+    privacyAccepted: Boolean,
     onAndroidKeyChanged: (String) -> Unit,
-    onWebKeyChanged: (String) -> Unit,
+    onPrivacyAcceptedChanged: (Boolean) -> Unit,
 ) {
+    val uriHandler = LocalUriHandler.current
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
         Column(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("高德高级设置", style = MaterialTheme.typography.titleSmall)
+            Text("高德地图设置", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "高德仅适合中国大陆. Key 只保存在本机 DataStore, 不会写入 APK, 日志或上传.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             OutlinedTextField(
                 value = androidKey,
                 onValueChange = onAndroidKeyChanged,
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
                 label = { Text("Android Key") },
                 supportingText = {
-                    Text(if (hasBuildAndroidKey) "当前使用构建内置 Android Key" else "留空时不启用高德底图")
+                    Text("请使用与当前 Package Name 和签名 SHA1 绑定的 Android Maps SDK Key")
                 },
             )
-            OutlinedTextField(
-                value = webKey,
-                onValueChange = onWebKeyChanged,
+            TextButton(
+                onClick = {
+                    uriHandler.openUri("https://lbs.amap.com/api/maps-sdk-for-android/guide/create-project/get-key")
+                },
+            ) {
+                Text("打开高德 Android Key 申请说明")
+            }
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                label = { Text("Web Key") },
-                supportingText = {
-                    Text(if (hasBuildWebKey) "当前使用构建内置 Web Key" else "留空时高德搜索不可用")
-                },
-            )
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(
+                    checked = privacyAccepted,
+                    onCheckedChange = onPrivacyAcceptedChanged,
+                )
+                Text(
+                    text = "我已阅读并同意高德开放平台隐私权政策",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            TextButton(
+                onClick = { uriHandler.openUri("https://lbs.amap.com/pages/privacy/") },
+            ) {
+                Text("查看高德开放平台隐私权政策")
+            }
         }
     }
 }

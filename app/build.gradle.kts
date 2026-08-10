@@ -1,31 +1,7 @@
-import java.util.Properties
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp")
-}
-
-val localProperties = Properties().apply {
-    val file = rootProject.file("local.properties")
-    if (file.exists()) {
-        file.inputStream().use { load(it) }
-    }
-}
-
-val amapApiKey =
-    (providers.gradleProperty("AMAP_API_KEY").orNull
-        ?: localProperties.getProperty("AMAP_API_KEY")
-        ?: "")
-        .trim()
-val amapWebApiKey =
-    (providers.gradleProperty("AMAP_WEB_API_KEY").orNull
-        ?: localProperties.getProperty("AMAP_WEB_API_KEY")
-        ?: "")
-        .trim()
-
-fun toBuildConfigString(value: String): String {
-    return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 }
 
 android {
@@ -43,10 +19,6 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
-
-        manifestPlaceholders["AMAP_API_KEY"] = amapApiKey
-        buildConfigField("String", "AMAP_API_KEY", toBuildConfigString(amapApiKey))
-        buildConfigField("String", "AMAP_WEB_API_KEY", toBuildConfigString(amapWebApiKey))
     }
 
     buildTypes {
@@ -70,7 +42,6 @@ android {
 
     buildFeatures {
         compose = true
-        buildConfig = true
     }
 
     composeOptions {

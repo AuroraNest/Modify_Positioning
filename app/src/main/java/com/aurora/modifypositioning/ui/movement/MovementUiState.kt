@@ -40,6 +40,6 @@ data class MovementUiState(
     val searchError: String? = null,
     val searchForStart: Boolean = false,
     val mapProvider: MapProvider = MapProvider.OSM,
-    val effectiveAmapAndroidKey: String = "",
-    val isAmapAndroidAvailable: Boolean = false,
+    val amapAndroidKey: String = "",
+    val amapPrivacyAccepted: Boolean = false,
 )

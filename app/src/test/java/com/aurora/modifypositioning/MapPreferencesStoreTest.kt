@@ -3,7 +3,6 @@ package com.aurora.modifypositioning
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.aurora.modifypositioning.data.MapPreferencesStore
 import com.aurora.modifypositioning.model.MapProvider
-import com.aurora.modifypositioning.model.resolveMapKeyAvailability
 import com.aurora.modifypositioning.model.resolveMapProvider
 import java.io.File
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -31,40 +30,32 @@ class MapPreferencesStoreTest {
     }
 
     @Test
-    fun amapAvailability_requiresRuntimeOrBuildKey() {
-        val empty = resolveMapKeyAvailability(
-            runtimeAndroidKey = "",
-            buildAndroidKey = "",
-            runtimeWebKey = "",
-            buildWebKey = "",
-        )
-        val runtime = resolveMapKeyAvailability(
-            runtimeAndroidKey = "android-key",
-            buildAndroidKey = "",
-            runtimeWebKey = "web-key",
-            buildWebKey = "",
-        )
-
-        assertFalse(empty.hasAmapAndroidKey)
-        assertFalse(empty.hasAmapWebKey)
-        assertTrue(runtime.hasAmapAndroidKey)
-        assertTrue(runtime.hasAmapWebKey)
-    }
-
-    @Test
-    fun preferences_persistMapProviderAndAmapKeys() = runTest {
+    fun preferences_persistProviderTrimmedAndroidKeyAndPrivacyConsent() = runTest {
         val store = newStore("map-prefs.preferences_pb")
 
         assertEquals(MapProvider.OSM, store.getMapProvider())
+        assertEquals("", store.getAmapAndroidKey())
+        assertFalse(store.getAmapPrivacyAccepted())
 
-        store.setMapProvider(MapProvider.AMAP)
         store.setAmapAndroidKey(" android-key ")
-        store.setAmapWebKey(" web-key ")
+        store.setAmapPrivacyAccepted(true)
+        store.setMapProvider(MapProvider.AMAP)
 
         val settings = store.getMapProviderSettings()
         assertEquals(MapProvider.AMAP, settings.mapProvider)
         assertEquals("android-key", settings.amapAndroidKey)
-        assertEquals("web-key", settings.amapWebKey)
+        assertTrue(settings.amapPrivacyAccepted)
+        assertTrue(settings.canUseAmap)
+
+        store.setAmapAndroidKey("replacement-key")
+        assertEquals(MapProvider.OSM, store.getMapProvider())
+        assertEquals("replacement-key", store.getAmapAndroidKey())
+
+        store.setMapProvider(MapProvider.AMAP)
+
+        store.setAmapPrivacyAccepted(false)
+        assertEquals(MapProvider.OSM, store.getMapProvider())
+        assertFalse(store.getAmapPrivacyAccepted())
     }
 
     private fun newStore(fileName: String): MapPreferencesStore {

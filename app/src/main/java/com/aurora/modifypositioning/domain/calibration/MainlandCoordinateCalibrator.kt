@@ -18,7 +18,10 @@ class MainlandCoordinateCalibrator : CoordinateCalibrator {
         return wgs84ToGcj02(lat, lng)
     }
 
-    private fun wgs84ToGcj02(lat: Double, lng: Double): Pair<Double, Double> {
+    fun wgs84ToGcj02(lat: Double, lng: Double): Pair<Double, Double> {
+        if (outOfChina(lat, lng)) {
+            return lat to lng
+        }
         var dLat = transformLat(lng - 105.0, lat - 35.0)
         var dLng = transformLng(lng - 105.0, lat - 35.0)
         val radLat = lat / 180.0 * PI
@@ -30,6 +33,20 @@ class MainlandCoordinateCalibrator : CoordinateCalibrator {
         val mgLat = lat + dLat
         val mgLng = lng + dLng
         return mgLat to mgLng
+    }
+
+    fun gcj02ToWgs84(lat: Double, lng: Double): Pair<Double, Double> {
+        if (outOfChina(lat, lng)) {
+            return lat to lng
+        }
+        var wgsLat = lat
+        var wgsLng = lng
+        repeat(6) {
+            val converted = wgs84ToGcj02(wgsLat, wgsLng)
+            wgsLat += lat - converted.first
+            wgsLng += lng - converted.second
+        }
+        return wgsLat to wgsLng
     }
 
     private fun transformLat(x: Double, y: Double): Double {

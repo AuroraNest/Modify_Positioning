@@ -60,8 +60,8 @@ class MapPreferencesStore internal constructor(
         .map { prefs ->
             MapProviderSettings(
                 mapProvider = resolveMapProvider(prefs[Keys.MAP_PROVIDER]),
-                amapAndroidKey = prefs[Keys.AMAP_ANDROID_KEY].orEmpty(),
-                amapWebKey = prefs[Keys.AMAP_WEB_KEY].orEmpty(),
+                amapAndroidKey = prefs[Keys.AMAP_ANDROID_KEY]?.trim().orEmpty(),
+                amapPrivacyAccepted = prefs[Keys.AMAP_PRIVACY_ACCEPTED] ?: false,
             )
         }
 
@@ -179,8 +179,10 @@ class MapPreferencesStore internal constructor(
     }
 
     suspend fun setAmapAndroidKey(key: String) {
+        val normalized = key.trim()
         dataStore.edit { prefs ->
-            prefs[Keys.AMAP_ANDROID_KEY] = key.trim()
+            prefs[Keys.AMAP_ANDROID_KEY] = normalized
+            prefs[Keys.MAP_PROVIDER] = MapProvider.OSM.name
         }
     }
 
@@ -188,14 +190,17 @@ class MapPreferencesStore internal constructor(
         return mapProviderSettingsFlow.first().amapAndroidKey
     }
 
-    suspend fun setAmapWebKey(key: String) {
+    suspend fun setAmapPrivacyAccepted(accepted: Boolean) {
         dataStore.edit { prefs ->
-            prefs[Keys.AMAP_WEB_KEY] = key.trim()
+            prefs[Keys.AMAP_PRIVACY_ACCEPTED] = accepted
+            if (!accepted) {
+                prefs[Keys.MAP_PROVIDER] = MapProvider.OSM.name
+            }
         }
     }
 
-    suspend fun getAmapWebKey(): String {
-        return mapProviderSettingsFlow.first().amapWebKey
+    suspend fun getAmapPrivacyAccepted(): Boolean {
+        return mapProviderSettingsFlow.first().amapPrivacyAccepted
     }
 
     suspend fun getMapProviderSettings(): MapProviderSettings {
@@ -216,7 +221,7 @@ class MapPreferencesStore internal constructor(
         val DEFAULT_SNAP_TO_ROAD: Preferences.Key<Boolean> = booleanPreferencesKey("default_snap_to_road")
         val MAP_PROVIDER: Preferences.Key<String> = stringPreferencesKey("map_provider")
         val AMAP_ANDROID_KEY: Preferences.Key<String> = stringPreferencesKey("amap_android_key")
-        val AMAP_WEB_KEY: Preferences.Key<String> = stringPreferencesKey("amap_web_key")
+        val AMAP_PRIVACY_ACCEPTED: Preferences.Key<Boolean> = booleanPreferencesKey("amap_privacy_accepted")
         val RANDOM_WALK_RADIUS_METERS: Preferences.Key<Double> =
             doublePreferencesKey("random_walk_radius_meters")
         val RANDOM_WALK_MIN_SPEED_MPS: Preferences.Key<Double> =

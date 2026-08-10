@@ -3,7 +3,6 @@ package com.aurora.modifypositioning.ui.map
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.aurora.modifypositioning.BuildConfig
 import com.aurora.modifypositioning.data.FavoriteLocationRepository
 import com.aurora.modifypositioning.data.MapPreferencesStore
 import com.aurora.modifypositioning.data.PlaceSearchRepository
@@ -15,8 +14,6 @@ import com.aurora.modifypositioning.model.MapProvider
 import com.aurora.modifypositioning.model.PlaceSuggestion
 import com.aurora.modifypositioning.model.SelectionSource
 import com.aurora.modifypositioning.model.TargetLocation
-import com.aurora.modifypositioning.model.effectiveAmapAndroidKey
-import com.aurora.modifypositioning.model.resolveMapKeyAvailability
 import com.aurora.modifypositioning.util.AppSessionMetrics
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -33,8 +30,7 @@ private const val MAX_SEARCH_SUGGESTIONS = 5
 class MapControlViewModel(
     private val mapPreferencesStore: MapPreferencesStore,
     private val favoriteRepository: FavoriteLocationRepository,
-    private val osmPlaceSearchRepository: PlaceSearchRepository?,
-    private val amapPlaceSearchRepository: PlaceSearchRepository?,
+    private val placeSearchRepository: PlaceSearchRepository?,
     private val controller: MockController,
 ) : ViewModel() {
 
@@ -71,28 +67,12 @@ class MapControlViewModel(
             return
         }
 
-        val searchRepository = when (_uiState.value.mapProvider) {
-            MapProvider.AMAP -> amapPlaceSearchRepository
-            MapProvider.OSM -> osmPlaceSearchRepository
-        }
-
-        if (_uiState.value.mapProvider == MapProvider.AMAP && !_uiState.value.isAmapWebSearchAvailable) {
+        if (placeSearchRepository == null) {
             _uiState.update {
                 it.copy(
                     suggestions = emptyList(),
                     isSearching = false,
-                    searchError = "请先在高级设置中填写高德 Web Key",
-                )
-            }
-            return
-        }
-
-        if (searchRepository == null) {
-            _uiState.update {
-                it.copy(
-                    suggestions = emptyList(),
-                    isSearching = false,
-                    searchError = "当前地图源搜索未就绪",
+                    searchError = "OSM 搜索未就绪",
                 )
             }
             return
@@ -102,7 +82,7 @@ class MapControlViewModel(
             delay(SEARCH_DEBOUNCE_MS)
             _uiState.update { it.copy(isSearching = true) }
 
-            runCatching { searchRepository.autocomplete(query) }
+            runCatching { placeSearchRepository.autocomplete(query) }
                 .onSuccess { suggestions ->
                     _uiState.update {
                         it.copy(
@@ -175,13 +155,20 @@ class MapControlViewModel(
     }
 
     fun setMapProvider(provider: MapProvider) {
-        if (provider == MapProvider.AMAP && !_uiState.value.isAmapAndroidAvailable) {
+        val current = _uiState.value
+        if (provider == MapProvider.AMAP && (!current.isAmapAndroidAvailable || !current.amapPrivacyAccepted)) {
+            val message = if (!current.isAmapAndroidAvailable) {
+                "请在高级设置中自行申请并填写高德 Android Maps SDK Key"
+            } else {
+                "请先阅读并同意高德开放平台隐私权政策"
+            }
             _uiState.update {
                 it.copy(
                     mapProvider = MapProvider.OSM,
                     suggestions = emptyList(),
                     isSearching = false,
-                    searchError = "请先在高级设置中填写高德 Android Key",
+                    searchError = message,
+                    showAdvancedSettings = true,
                 )
             }
             viewModelScope.launch {
@@ -208,16 +195,28 @@ class MapControlViewModel(
     }
 
     fun onAmapAndroidKeyChanged(value: String) {
-        _uiState.updateSettingsKeys(amapAndroidKey = value)
+        val available = value.trim().isNotEmpty()
+        _uiState.update {
+            it.copy(
+                amapAndroidKey = value,
+                isAmapAndroidAvailable = available,
+                mapProvider = MapProvider.OSM,
+            )
+        }
         viewModelScope.launch {
             mapPreferencesStore.setAmapAndroidKey(value)
         }
     }
 
-    fun onAmapWebKeyChanged(value: String) {
-        _uiState.updateSettingsKeys(amapWebKey = value)
+    fun onAmapPrivacyAcceptedChanged(accepted: Boolean) {
+        _uiState.update {
+            it.copy(
+                amapPrivacyAccepted = accepted,
+                mapProvider = if (accepted) it.mapProvider else MapProvider.OSM,
+            )
+        }
         viewModelScope.launch {
-            mapPreferencesStore.setAmapWebKey(value)
+            mapPreferencesStore.setAmapPrivacyAccepted(accepted)
         }
     }
 
@@ -366,28 +365,15 @@ class MapControlViewModel(
     private fun observeMapProviderSettings() {
         viewModelScope.launch {
             mapPreferencesStore.mapProviderSettingsFlow.collect { settings ->
-                val availability = resolveMapKeyAvailability(
-                    runtimeAndroidKey = settings.amapAndroidKey,
-                    buildAndroidKey = BuildConfig.AMAP_API_KEY,
-                    runtimeWebKey = settings.amapWebKey,
-                    buildWebKey = BuildConfig.AMAP_WEB_API_KEY,
-                )
-                val provider = if (settings.mapProvider == MapProvider.AMAP && !availability.hasAmapAndroidKey) {
-                    MapProvider.OSM
-                } else {
-                    settings.mapProvider
-                }
+                val provider = settings.mapProvider.takeIf {
+                    it != MapProvider.AMAP || settings.canUseAmap
+                } ?: MapProvider.OSM
                 _uiState.update {
                     it.copy(
                         mapProvider = provider,
                         amapAndroidKey = settings.amapAndroidKey,
-                        amapWebKey = settings.amapWebKey,
-                        effectiveAmapAndroidKey = effectiveAmapAndroidKey(
-                            runtimeAndroidKey = settings.amapAndroidKey,
-                            buildAndroidKey = BuildConfig.AMAP_API_KEY,
-                        ),
-                        isAmapAndroidAvailable = availability.hasAmapAndroidKey,
-                        isAmapWebSearchAvailable = availability.hasAmapWebKey,
+                        amapPrivacyAccepted = settings.amapPrivacyAccepted,
+                        isAmapAndroidAvailable = settings.amapAndroidKey.isNotBlank(),
                     )
                 }
             }
@@ -417,38 +403,12 @@ class MapControlViewModel(
         }
     }
 
-    private fun MutableStateFlow<MapControlUiState>.updateSettingsKeys(
-        amapAndroidKey: String? = null,
-        amapWebKey: String? = null,
-    ) {
-        update { state ->
-            val nextAndroidKey = amapAndroidKey ?: state.amapAndroidKey
-            val nextWebKey = amapWebKey ?: state.amapWebKey
-            val availability = resolveMapKeyAvailability(
-                runtimeAndroidKey = nextAndroidKey,
-                buildAndroidKey = BuildConfig.AMAP_API_KEY,
-                runtimeWebKey = nextWebKey,
-                buildWebKey = BuildConfig.AMAP_WEB_API_KEY,
-            )
-            state.copy(
-                amapAndroidKey = nextAndroidKey,
-                amapWebKey = nextWebKey,
-                effectiveAmapAndroidKey = effectiveAmapAndroidKey(
-                    runtimeAndroidKey = nextAndroidKey,
-                    buildAndroidKey = BuildConfig.AMAP_API_KEY,
-                ),
-                isAmapAndroidAvailable = availability.hasAmapAndroidKey,
-                isAmapWebSearchAvailable = availability.hasAmapWebKey,
-            )
-        }
-    }
 }
 
 class MapControlViewModelFactory(
     private val mapPreferencesStore: MapPreferencesStore,
     private val favoriteRepository: FavoriteLocationRepository,
-    private val osmPlaceSearchRepository: PlaceSearchRepository?,
-    private val amapPlaceSearchRepository: PlaceSearchRepository?,
+    private val placeSearchRepository: PlaceSearchRepository?,
     private val controller: MockController,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
@@ -457,8 +417,7 @@ class MapControlViewModelFactory(
             return MapControlViewModel(
                 mapPreferencesStore = mapPreferencesStore,
                 favoriteRepository = favoriteRepository,
-                osmPlaceSearchRepository = osmPlaceSearchRepository,
-                amapPlaceSearchRepository = amapPlaceSearchRepository,
+                placeSearchRepository = placeSearchRepository,
                 controller = controller,
             ) as T
         }

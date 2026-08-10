@@ -45,4 +45,25 @@ class CoordinateCalibratorTest {
         assertEquals(40.7580, result.first, 0.000001)
         assertEquals(-73.9855, result.second, 0.000001)
     }
+
+    @Test
+    fun mapBoundary_roundTripsMainlandCoordinateWithoutAccumulatingOffset() {
+        val wgs84 = 39.9087 to 116.3975
+        val gcj02 = calibrator.wgs84ToGcj02(wgs84.first, wgs84.second)
+        val restored = calibrator.gcj02ToWgs84(gcj02.first, gcj02.second)
+        val renderedAgain = calibrator.wgs84ToGcj02(restored.first, restored.second)
+
+        assertEquals(wgs84.first, restored.first, 0.00001)
+        assertEquals(wgs84.second, restored.second, 0.00001)
+        assertEquals(gcj02.first, renderedAgain.first, 0.00001)
+        assertEquals(gcj02.second, renderedAgain.second, 0.00001)
+    }
+
+    @Test
+    fun mapBoundary_keepsOverseaCoordinateUnchangedInBothDirections() {
+        val wgs84 = 40.7580 to -73.9855
+
+        assertEquals(wgs84, calibrator.wgs84ToGcj02(wgs84.first, wgs84.second))
+        assertEquals(wgs84, calibrator.gcj02ToWgs84(wgs84.first, wgs84.second))
+    }
 }

@@ -3,7 +3,6 @@ package com.aurora.modifypositioning.ui.movement
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.aurora.modifypositioning.BuildConfig
 import com.aurora.modifypositioning.data.MapPreferencesStore
 import com.aurora.modifypositioning.data.PlaceSearchRepository
 import com.aurora.modifypositioning.data.RouteRepository
@@ -25,8 +24,6 @@ import com.aurora.modifypositioning.model.RoutePoint
 import com.aurora.modifypositioning.model.SelectionSource
 import com.aurora.modifypositioning.model.TargetLocation
 import com.aurora.modifypositioning.model.TravelMode
-import com.aurora.modifypositioning.model.effectiveAmapAndroidKey
-import com.aurora.modifypositioning.model.resolveMapKeyAvailability
 import com.aurora.modifypositioning.util.AppSessionMetrics
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -517,13 +514,7 @@ class MovementViewModel(
     private fun observeMapProviderSettings() {
         viewModelScope.launch {
             mapPreferencesStore.mapProviderSettingsFlow.collectLatest { settings ->
-                val availability = resolveMapKeyAvailability(
-                    runtimeAndroidKey = settings.amapAndroidKey,
-                    buildAndroidKey = BuildConfig.AMAP_API_KEY,
-                    runtimeWebKey = settings.amapWebKey,
-                    buildWebKey = BuildConfig.AMAP_WEB_API_KEY,
-                )
-                val provider = if (settings.mapProvider == MapProvider.AMAP && availability.hasAmapAndroidKey) {
+                val provider = if (settings.mapProvider == MapProvider.AMAP && settings.canUseAmap) {
                     MapProvider.AMAP
                 } else {
                     MapProvider.OSM
@@ -531,11 +522,8 @@ class MovementViewModel(
                 _uiState.update {
                     it.copy(
                         mapProvider = provider,
-                        effectiveAmapAndroidKey = effectiveAmapAndroidKey(
-                            runtimeAndroidKey = settings.amapAndroidKey,
-                            buildAndroidKey = BuildConfig.AMAP_API_KEY,
-                        ),
-                        isAmapAndroidAvailable = availability.hasAmapAndroidKey,
+                        amapAndroidKey = settings.amapAndroidKey,
+                        amapPrivacyAccepted = settings.amapPrivacyAccepted,
                     )
                 }
             }
