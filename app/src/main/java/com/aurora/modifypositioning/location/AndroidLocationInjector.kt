@@ -201,6 +201,7 @@ class AndroidLocationInjector(
                 verificationMockStatus = reportVerification.toMockStatusText(),
                 verificationDistanceMeters = reportVerification.verificationDistanceMeters(recovery?.provider),
                 recoveryStatus = recovery?.recoveryReason,
+                elapsedRealtimeNanos = sample.elapsedRealtimeNanos,
             ),
         )
     }

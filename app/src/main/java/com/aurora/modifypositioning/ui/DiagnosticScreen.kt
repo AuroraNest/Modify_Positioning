@@ -29,6 +29,9 @@ import androidx.compose.ui.unit.dp
 import com.aurora.modifypositioning.model.DiagnosticLocation
 import com.aurora.modifypositioning.model.DiagnosticSnapshot
 import com.aurora.modifypositioning.model.DiagnosticVerdictStatus
+import com.aurora.modifypositioning.model.FixedPointChannelReadiness
+import com.aurora.modifypositioning.model.FixedPointReadinessSnapshot
+import com.aurora.modifypositioning.model.FixedPointReadinessState
 import com.aurora.modifypositioning.model.MockState
 import com.aurora.modifypositioning.model.MovementMode
 import com.aurora.modifypositioning.model.MovementState
@@ -47,6 +50,7 @@ import java.util.Locale
 fun DiagnosticScreen(
     snapshot: DiagnosticSnapshot,
     onRefresh: () -> Unit,
+    onRestabilize: () -> Unit,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -106,6 +110,14 @@ fun DiagnosticScreen(
                 DiagnosticList("可能原因", verdict.possibleCauses)
                 DiagnosticList("下一步", verdict.nextSteps)
             }
+        }
+
+        snapshot.fixedPointReadiness?.let { readiness ->
+            FixedPointReadinessCard(
+                readiness = readiness,
+                restabilizeEnabled = snapshot.appState == MockState.Running || snapshot.appState == MockState.Paused,
+                onRestabilize = onRestabilize,
+            )
         }
 
         Card(
@@ -293,6 +305,80 @@ fun DiagnosticScreen(
             Text("返回控制台")
         }
         }
+    }
+}
+
+@Composable
+private fun FixedPointReadinessCard(
+    readiness: FixedPointReadinessSnapshot,
+    restabilizeEnabled: Boolean,
+    onRestabilize: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text("固定点准备状态", style = MaterialTheme.typography.titleMedium)
+            Text("状态: ${fixedPointStateLabel(readiness.state)}")
+            Text("分数: ${readiness.score}/100")
+            Text("建议: ${readiness.summary}")
+            Text(
+                "原始目标: ${readiness.rawTarget.name} " +
+                    "(${"%.6f".format(readiness.rawTarget.latitude)}, ${"%.6f".format(readiness.rawTarget.longitude)})",
+            )
+            Text(
+                "实际注入: (${"%.6f".format(readiness.injectedTarget.latitude)}, " +
+                    "${"%.6f".format(readiness.injectedTarget.longitude)})",
+            )
+            Text("坐标校准偏移: ${"%.1f".format(readiness.calibrationOffsetMeters)} 米")
+            FixedPointChannelLine(readiness.gps)
+            FixedPointChannelLine(readiness.network)
+            FixedPointChannelLine(readiness.fused)
+            readiness.checks.forEach { check ->
+                Text("${if (check.passed) "[OK]" else "[!]"} ${check.title}: ${check.message}")
+            }
+            Text(
+                "本页面只反映 Android 标准 GPS/Network/Fused 定位链路. " +
+                    "本项目不隐藏 mock 状态, 也不保证任何第三方 App 接受模拟定位.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(
+                onClick = onRestabilize,
+                enabled = restabilizeEnabled,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Text("重新稳定目标点")
+            }
+        }
+    }
+}
+
+@Composable
+private fun FixedPointChannelLine(channel: FixedPointChannelReadiness) {
+    Text(
+        "${channel.provider}: ${channel.message}, 距离 ${formatDistance(channel.distanceToTargetMeters)}, " +
+            "年龄 ${channel.ageMillis?.let { "${it}ms" } ?: "-"}, " +
+            "精度 ${channel.accuracyMeters?.let { "${"%.1f".format(it)} 米" } ?: "-"}",
+    )
+}
+
+private fun fixedPointStateLabel(state: FixedPointReadinessState): String {
+    return when (state) {
+        FixedPointReadinessState.IDLE -> "未启动"
+        FixedPointReadinessState.STARTING -> "正在启动"
+        FixedPointReadinessState.BURSTING -> "快速注入中"
+        FixedPointReadinessState.SETTLING -> "稳定中"
+        FixedPointReadinessState.READY -> "已稳定"
+        FixedPointReadinessState.DEGRADED -> "部分可用"
+        FixedPointReadinessState.BLOCKED -> "被阻断"
+        FixedPointReadinessState.STOPPED -> "已停止"
     }
 }
 

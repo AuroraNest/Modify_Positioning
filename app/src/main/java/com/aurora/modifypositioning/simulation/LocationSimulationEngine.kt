@@ -34,6 +34,23 @@ class LocationSimulationEngine(
     }
 
     @Synchronized
+    fun reset(
+        target: TargetLocation,
+        movementMode: MovementMode,
+        environment: EnvironmentProfile,
+        speedMps: Double = 0.0,
+        bearingDegrees: Double? = null,
+    ) {
+        this.target = target
+        this.movementMode = movementMode
+        this.environment = environment
+        previousSample = null
+        previousAccuracyMeters = null
+        motionSpeedMps = speedMps.coerceAtLeast(0.0)
+        motionBearingDegrees = bearingDegrees.takeIf { motionSpeedMps > 0.0 }
+    }
+
+    @Synchronized
     fun stopMotion() {
         motionSpeedMps = 0.0
         motionBearingDegrees = null

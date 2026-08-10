@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Location
 import android.location.LocationManager
+import android.os.SystemClock
 import com.google.android.gms.location.LocationServices
 import com.aurora.modifypositioning.model.TargetLocation
 import com.aurora.modifypositioning.simulation.LocationSample
@@ -23,12 +24,17 @@ class FusedLocationInjector(
         .getOrNull(),
     updateIntervalMs = updateIntervalMs,
     onError = onError,
+    monotonicNowMillis = { SystemClock.elapsedRealtime() },
+    mockModeRequestTimeoutMillis = 2_500L,
 )
 
 internal class FusedLocationInjectorCore(
     private val client: FusedMockLocationClient?,
     updateIntervalMs: Long,
     private val onError: (String) -> Unit,
+    private val monotonicNowMillis: () -> Long = { System.nanoTime() / 1_000_000L },
+    private val mockModeRequestTimeoutMillis: Long = 3_000L,
+    private val setLocationRequestTimeoutMillis: Long = 2_000L,
 ) : SampledLocationInjector {
     @Volatile
     private var currentTarget: TargetLocation? = null
@@ -39,13 +45,18 @@ internal class FusedLocationInjectorCore(
     private var desiredMockMode = false
     private var mockModeReadyForRequest = false
     private var activeMockModeRequestId: Long? = null
+    private var activeMockModeStartedAtMillis: Long? = null
     private var nextMockModeRequestId = 0L
     private var lastInjectionTimeMillis: Long? = null
     private var lastInjectionPending = false
     private var pendingSample: LocationSample? = null
     private var activeLocationRequestId: Long? = null
+    private var activeLocationStartedAtMillis: Long? = null
+    private var activeLocationSample: LocationSample? = null
+    private var activeLocationTargetRevision: Long? = null
     private var nextLocationRequestId = 0L
     private var injectionGeneration = 0L
+    private var targetRevision = 0L
     private var lastSuccessfulLatitude: Double? = null
     private var lastSuccessfulLongitude: Double? = null
     private var lastError: String? = null
@@ -69,6 +80,9 @@ internal class FusedLocationInjectorCore(
         }
         injectionGeneration++
         activeLocationRequestId = null
+        activeLocationStartedAtMillis = null
+        activeLocationSample = null
+        activeLocationTargetRevision = null
         lastInjectionPending = false
         pendingSample = null
         state = InjectorState.STARTING
@@ -82,6 +96,8 @@ internal class FusedLocationInjectorCore(
             return
         }
         currentTarget = target
+        targetRevision += 1L
+        pendingSample = null
     }
 
     @Synchronized
@@ -99,6 +115,9 @@ internal class FusedLocationInjectorCore(
         pendingSample = null
         lastInjectionPending = false
         activeLocationRequestId = null
+        activeLocationStartedAtMillis = null
+        activeLocationSample = null
+        activeLocationTargetRevision = null
         setMockMode(false)
         state = InjectorState.STOPPED
     }
@@ -116,6 +135,7 @@ internal class FusedLocationInjectorCore(
         }
         val requestId = ++nextMockModeRequestId
         activeMockModeRequestId = requestId
+        activeMockModeStartedAtMillis = monotonicNowMillis()
         mockModeReadyForRequest = false
         runCatching {
             mockModePending = true
@@ -140,6 +160,7 @@ internal class FusedLocationInjectorCore(
             return
         }
         activeMockModeRequestId = null
+        activeMockModeStartedAtMillis = null
         mockModePending = false
         mockModeEnabled = enabled
         mockModeReadyForRequest = true
@@ -162,6 +183,7 @@ internal class FusedLocationInjectorCore(
             return
         }
         activeMockModeRequestId = null
+        activeMockModeStartedAtMillis = null
         mockModePending = false
         mockModeReadyForRequest = false
         publishError(
@@ -174,6 +196,7 @@ internal class FusedLocationInjectorCore(
     @Synchronized
     override fun inject(sample: LocationSample) {
         pendingSample = sample
+        recoverTimedOutRequests(monotonicNowMillis())
         client ?: run {
             publishError(InjectorErrorCode.GOOGLE_PLAY_SERVICES_UNAVAILABLE, "fused client 不可用")
             return
@@ -210,21 +233,25 @@ internal class FusedLocationInjectorCore(
 
         val requestId = ++nextLocationRequestId
         val requestGeneration = injectionGeneration
+        val requestTargetRevision = targetRevision
         activeLocationRequestId = requestId
+        activeLocationStartedAtMillis = monotonicNowMillis()
+        activeLocationSample = sample
+        activeLocationTargetRevision = requestTargetRevision
         lastInjectionPending = true
         publishStatus()
         runCatching {
             fusedClient.setMockLocation(
                 location = location,
                 onSuccess = locationSuccess@{
-                    completeLocationSuccess(requestId, requestGeneration, sample)
+                    completeLocationSuccess(requestId, requestGeneration, requestTargetRevision, sample)
                 },
                 onFailure = locationFailure@{ error ->
-                    completeLocationFailure(requestId, requestGeneration, error)
+                    completeLocationFailure(requestId, requestGeneration, requestTargetRevision, error)
                 },
             )
         }.onFailure { error ->
-            completeLocationFailure(requestId, requestGeneration, error)
+            completeLocationFailure(requestId, requestGeneration, requestTargetRevision, error)
         }
     }
 
@@ -232,14 +259,18 @@ internal class FusedLocationInjectorCore(
     private fun completeLocationSuccess(
         requestId: Long,
         requestGeneration: Long,
+        requestTargetRevision: Long,
         sample: LocationSample,
     ) {
         if (activeLocationRequestId != requestId) {
             return
         }
         activeLocationRequestId = null
+        activeLocationStartedAtMillis = null
+        activeLocationSample = null
+        activeLocationTargetRevision = null
         lastInjectionPending = false
-        if (isCurrentInjection(requestGeneration)) {
+        if (isCurrentInjection(requestGeneration, requestTargetRevision)) {
             lastInjectionTimeMillis = sample.timestampMillis
             lastSuccessfulLatitude = sample.latitude
             lastSuccessfulLongitude = sample.longitude
@@ -258,14 +289,18 @@ internal class FusedLocationInjectorCore(
     private fun completeLocationFailure(
         requestId: Long,
         requestGeneration: Long,
+        requestTargetRevision: Long,
         error: Throwable,
     ) {
         if (activeLocationRequestId != requestId) {
             return
         }
         activeLocationRequestId = null
+        activeLocationStartedAtMillis = null
+        activeLocationSample = null
+        activeLocationTargetRevision = null
         lastInjectionPending = false
-        if (isCurrentInjection(requestGeneration)) {
+        if (isCurrentInjection(requestGeneration, requestTargetRevision)) {
             publishError(InjectorErrorCode.FUSED_SET_LOCATION_FAILED, "fused 注入失败: ${error.message ?: "未知错误"}")
         }
         dispatchPendingSample()
@@ -274,12 +309,60 @@ internal class FusedLocationInjectorCore(
         }
     }
 
-    private fun isCurrentInjection(requestGeneration: Long): Boolean {
+    private fun isCurrentInjection(requestGeneration: Long, requestTargetRevision: Long): Boolean {
         return requestGeneration == injectionGeneration &&
+            requestTargetRevision == targetRevision &&
             desiredMockMode &&
             mockModeEnabled &&
             mockModeReadyForRequest &&
             currentTarget != null
+    }
+
+    @Synchronized
+    private fun recoverTimedOutRequests(nowMillis: Long) {
+        val mockModeStartedAt = activeMockModeStartedAtMillis
+        if (
+            activeMockModeRequestId != null &&
+            mockModeStartedAt != null &&
+            nowMillis >= mockModeStartedAt &&
+            nowMillis - mockModeStartedAt >= mockModeRequestTimeoutMillis
+        ) {
+            activeMockModeRequestId = null
+            activeMockModeStartedAtMillis = null
+            mockModePending = false
+            mockModeReadyForRequest = false
+            lastFailureAtMillis = System.currentTimeMillis()
+            lastErrorCode = InjectorErrorCode.FUSED_MOCK_MODE_FAILED
+            lastError = "fused mock mode 请求超时, 正在重试"
+            state = if (desiredMockMode) InjectorState.STARTING else InjectorState.STOPPED
+            setMockMode(desiredMockMode)
+        }
+
+        val locationStartedAt = activeLocationStartedAtMillis
+        if (
+            activeLocationRequestId != null &&
+            locationStartedAt != null &&
+            nowMillis >= locationStartedAt &&
+            nowMillis - locationStartedAt >= setLocationRequestTimeoutMillis
+        ) {
+            val retrySample = pendingSample ?: activeLocationSample.takeIf {
+                activeLocationTargetRevision == targetRevision
+            }
+            activeLocationRequestId = null
+            activeLocationStartedAtMillis = null
+            activeLocationSample = null
+            activeLocationTargetRevision = null
+            lastInjectionPending = false
+            pendingSample = retrySample
+            lastFailureAtMillis = System.currentTimeMillis()
+            lastErrorCode = InjectorErrorCode.FUSED_SET_LOCATION_FAILED
+            lastError = "fused setMockLocation 请求超时, 正在重试最新样本"
+            state = InjectorState.DEGRADED
+            dispatchPendingSample()
+            if (activeLocationRequestId == null) {
+                publishStatus()
+            }
+        }
     }
 
     private fun publishError(code: InjectorErrorCode, message: String) {
@@ -302,12 +385,17 @@ internal class FusedLocationInjectorCore(
                 lastSuccessfulLatitude = lastSuccessfulLatitude,
                 lastSuccessfulLongitude = lastSuccessfulLongitude,
                 lastError = lastError,
+                lastInjectionElapsedRealtimeMillis = lastSuccessfulSample
+                    ?.elapsedRealtimeNanos
+                    ?.div(1_000_000L),
+                lastSuccessfulAccuracyMeters = lastSuccessfulSample?.accuracyMeters,
             ),
         )
     }
 
     @Synchronized
     override fun status(): InjectorStatus {
+        recoverTimedOutRequests(monotonicNowMillis())
         return InjectorStatus(
             id = "fused-location",
             displayName = "Fused",

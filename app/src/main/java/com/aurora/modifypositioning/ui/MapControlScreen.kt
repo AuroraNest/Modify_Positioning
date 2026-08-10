@@ -758,10 +758,10 @@ private fun CommandDock(
             ) {
                 Text(
                     when (appState) {
-                        MockState.Idle -> "开始虚拟定位"
-                        MockState.Running -> "重新锁定"
-                        MockState.Paused -> "继续虚拟定位"
-                        is MockState.Error -> "重试虚拟定位"
+                        MockState.Idle -> "准备固定点定位"
+                        MockState.Running -> "重新稳定目标点"
+                        MockState.Paused -> "重新稳定目标点"
+                        is MockState.Error -> "重试固定点定位"
                     },
                 )
             }

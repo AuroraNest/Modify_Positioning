@@ -13,6 +13,8 @@ data class FusedLocationDiagnostics(
     val lastSuccessfulLatitude: Double? = null,
     val lastSuccessfulLongitude: Double? = null,
     val lastError: String? = null,
+    val lastInjectionElapsedRealtimeMillis: Long? = null,
+    val lastSuccessfulAccuracyMeters: Float? = null,
 )
 
 object FusedLocationDiagnosticsStore {

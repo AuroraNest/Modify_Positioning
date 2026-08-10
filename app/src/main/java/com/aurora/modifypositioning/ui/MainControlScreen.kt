@@ -117,7 +117,7 @@ fun MainControlScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Button(onClick = onStart, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)) {
-                    Text("开始模拟")
+                    Text("准备固定点定位")
                 }
                 FilledTonalButton(onClick = onPause, modifier = Modifier.weight(1f), shape = RoundedCornerShape(8.dp)) {
                     Text("暂停")

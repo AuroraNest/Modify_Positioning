@@ -10,4 +10,5 @@ data class InjectionReport(
     val verificationMockStatus: String? = null,
     val verificationDistanceMeters: Double? = null,
     val recoveryStatus: String? = null,
+    val elapsedRealtimeNanos: Long? = null,
 )

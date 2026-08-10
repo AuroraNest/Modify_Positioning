@@ -10,6 +10,7 @@ data class DiagnosticLocation(
     val timeMillis: Long,
     val isMock: Boolean,
     val distanceToLastInjectionMeters: Double? = null,
+    val elapsedRealtimeNanos: Long? = null,
 )
 
 data class DiagnosticInjectorStatus(
@@ -64,4 +65,5 @@ data class DiagnosticSnapshot(
     val calibrationMode: CoordinateCalibrationMode,
     val searchRequestCount: Int,
     val restorationState: RestorationState = RestorationState.NOT_REQUESTED,
+    val fixedPointReadiness: FixedPointReadinessSnapshot? = null,
 )

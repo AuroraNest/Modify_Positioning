@@ -218,6 +218,20 @@ AMAP_WEB_API_KEY=your_web_key
 
 这表示本 App 已在本次测试设备上支持微信, 美团的标准定位链路兼容测试, 不表示所有设备都能得到相同结果, 也不表示可以绕过目标 App 的 mock 检测或风控.
 
+### 固定点稳定性与准备状态
+
+固定点模式会先执行 startup burst, 再进入稳定窗口. 诊断页会分别检查 GPS, Network 和 Fused 的 monotonic freshness, 与实际注入坐标的距离, mock 标记, 连续稳定时间和 15 秒预热时间, 并显示 0-100 准备分数.
+
+推荐流程:
+
+1. 在地图上选择原始目标, 并确认坐标校准设置.
+2. 点击"准备固定点定位".
+3. 在诊断页查看原始目标, 实际注入坐标和校准偏移.
+4. 等待"固定点准备状态"显示"已稳定", 再到目标 App 手动触发定位.
+5. 改变目标或出现旧位置回弹时, 点击"重新稳定目标点".
+
+"已稳定"只表示 Android 标准 GPS/Network/Fused 定位链路已连续接近目标点. 本项目不会隐藏 `Location.isMock()`, 也不保证任何第三方 App 接受模拟定位. 目标 App 仍可能使用缓存, 服务端校验, IP, Wi-Fi, 基站, 传感器或 anti-mock 判断.
+
 ## 现实边界
 
 本 App 使用 Android 官方 mock location 能力. 当目标 App 使用 `LocationManager` 或 `FusedLocationProviderClient` 获取位置时, 通常可以读取到模拟位置. 如果目标 App 使用 anti-mock 检测, 位置缓存, 服务端校验, 账号风控, IP, Wi-Fi, 蓝牙, 基站或传感器辅助判断, 可能仍显示真实位置或拒绝使用模拟位置.

@@ -31,6 +31,7 @@ import com.aurora.modifypositioning.domain.MockControllerStore
 import com.aurora.modifypositioning.domain.routing.OsrmRoutePlanner
 import com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore
 import com.aurora.modifypositioning.model.MapSelection
+import com.aurora.modifypositioning.model.MockState
 import com.aurora.modifypositioning.model.MovementMode
 import com.aurora.modifypositioning.model.MovementPageTab
 import com.aurora.modifypositioning.model.RouteInputMode
@@ -234,9 +235,21 @@ class MainActivity : ComponentActivity() {
                         MovementMode.RANDOM_WALK -> "已开始随机步行模拟"
                         MovementMode.POINT_TO_POINT_NAV -> "已开始两点导航模拟"
                         MovementMode.CUSTOM_ROUTE -> "已开始指定路线模拟"
-                        MovementMode.FIXED -> "已开始修改定位"
+                        MovementMode.FIXED -> "正在准备固定点定位"
                     }
                     Toast.makeText(this@MainActivity, tip, Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            fun prepareFixedPoint() {
+                if (
+                    movementMode == MovementMode.FIXED &&
+                    (state == MockState.Running || state == MockState.Paused)
+                ) {
+                    startService(MockLocationService.restabilizeFixedIntent(this@MainActivity))
+                    Toast.makeText(this@MainActivity, "正在重新稳定目标点", Toast.LENGTH_SHORT).show()
+                } else {
+                    startMock(MovementMode.FIXED)
                 }
             }
 
@@ -350,7 +363,7 @@ class MainActivity : ComponentActivity() {
                                 onSelectFavorite = { mapViewModel.selectFavorite(it) },
                                 onDeleteFavorite = { mapViewModel.deleteFavorite(it) },
                                 onRenameFavorite = { item, name -> mapViewModel.renameFavorite(item, name) },
-                                onStart = { startMock(MovementMode.FIXED) },
+                                onStart = { prepareFixedPoint() },
                                 onPause = { pauseMock() },
                                 onStop = { stopMock() },
                                 onOpenMovement = { screen = UiScreen.MOVEMENT },
@@ -368,7 +381,7 @@ class MainActivity : ComponentActivity() {
                                 state = state,
                                 statusText = statusText,
                                 target = target,
-                                onStart = { startMock(MovementMode.FIXED) },
+                                onStart = { prepareFixedPoint() },
                                 onPause = { pauseMock() },
                                 onStop = { stopMock() },
                                 onOpenGuide = {
@@ -454,6 +467,14 @@ class MainActivity : ComponentActivity() {
                             DiagnosticScreen(
                                 snapshot = diagnostics,
                                 onRefresh = { refreshDiagnostics() },
+                                onRestabilize = {
+                                    startService(MockLocationService.restabilizeFixedIntent(this@MainActivity))
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        "正在重新稳定目标点",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                },
                                 onBack = {
                                     screen = UiScreen.MAP
                                 },

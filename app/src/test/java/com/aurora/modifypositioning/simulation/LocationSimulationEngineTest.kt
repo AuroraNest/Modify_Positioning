@@ -2,6 +2,7 @@ package com.aurora.modifypositioning.simulation
 
 import com.aurora.modifypositioning.model.MovementMode
 import com.aurora.modifypositioning.model.TargetLocation
+import com.aurora.modifypositioning.location.distanceMeters
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -84,5 +85,48 @@ class LocationSimulationEngineTest {
         assertEquals(91.0f, moving.bearingDegrees)
         assertEquals(0.0f, stopped.speedMps)
         assertNull(stopped.bearingDegrees)
+    }
+
+    @Test
+    fun resetAfterLargeTargetJump_dropsOldSampleState() {
+        var wall = 1_000L
+        var nanos = 10_000L
+        val oldTarget = TargetLocation("old", 30.0, 120.0)
+        val newTarget = TargetLocation("new", 40.758, -73.9855)
+        val engine = LocationSimulationEngine(
+            initialTarget = oldTarget,
+            initialMovementMode = MovementMode.FIXED,
+            clock = LocationSampleClock(
+                wallTimeProvider = { wall++ },
+                elapsedRealtimeNanosProvider = { nanos++ },
+            ),
+        )
+        repeat(5) { engine.nextSample() }
+
+        engine.reset(
+            target = newTarget,
+            movementMode = MovementMode.FIXED,
+            environment = EnvironmentProfile.OUTDOOR_OPEN,
+        )
+        val resetSample = engine.nextSample()
+
+        assertTrue(
+            distanceMeters(
+                resetSample.latitude,
+                resetSample.longitude,
+                newTarget.latitude,
+                newTarget.longitude,
+            ) <= 10.0,
+        )
+        assertTrue(
+            distanceMeters(
+                resetSample.latitude,
+                resetSample.longitude,
+                oldTarget.latitude,
+                oldTarget.longitude,
+            ) > 2_000.0,
+        )
+        assertEquals(0.0f, resetSample.speedMps)
+        assertNull(resetSample.bearingDegrees)
     }
 }

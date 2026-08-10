@@ -5,13 +5,19 @@ import android.content.Context
 import android.location.Location
 import android.location.LocationManager
 import android.os.Build
+import android.os.SystemClock
 import com.aurora.modifypositioning.data.MapPreferencesStore
+import com.aurora.modifypositioning.domain.calibration.MainlandCoordinateCalibrator
+import com.aurora.modifypositioning.fixed.FixedPointReadinessEvaluator
+import com.aurora.modifypositioning.fixed.FixedPointReadinessInput
+import com.aurora.modifypositioning.fixed.FixedPointSessionStore
 import com.aurora.modifypositioning.location.CompositeInjectorStatus
 import com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore
 import com.aurora.modifypositioning.location.distanceMeters
 import com.aurora.modifypositioning.model.DiagnosticInjectorStatus
 import com.aurora.modifypositioning.model.DiagnosticLocation
 import com.aurora.modifypositioning.model.DiagnosticSnapshot
+import com.aurora.modifypositioning.model.DEFAULT_TARGET
 import com.aurora.modifypositioning.model.InjectionReport
 import com.aurora.modifypositioning.model.MockState
 import com.aurora.modifypositioning.model.MovementMode
@@ -43,6 +49,7 @@ object LocationDiagnosticsReader {
         restorationState: RestorationState,
     ): DiagnosticSnapshot {
         val missingPermissions = MockEnvironmentChecker.missingLocationPermissions(context)
+        val nowElapsedRealtimeMillis = SystemClock.elapsedRealtime()
         val manager = context.getSystemService(LocationManager::class.java)
 
         val gpsEnabled = runCatching { manager?.isProviderEnabled(LocationManager.GPS_PROVIDER) ?: false }
@@ -62,7 +69,49 @@ object LocationDiagnosticsReader {
         }
 
         val calibrationMode = runBlocking { mapPreferencesStore.getCalibrationMode() }
+        val selectedTarget = runBlocking { mapPreferencesStore.getTargetOrNull() } ?: DEFAULT_TARGET
         val fused = FusedLocationDiagnosticsStore.state.value
+        val session = FixedPointSessionStore.snapshot()
+        val rawTarget = session.rawTarget ?: selectedTarget
+        val injectedTarget = session.injectedTarget ?: MainlandCoordinateCalibrator()
+            .toInjectCoordinate(rawTarget.latitude, rawTarget.longitude, calibrationMode)
+            .let { (latitude, longitude) ->
+                rawTarget.copy(latitude = latitude, longitude = longitude)
+            }
+        val fixedPointReadiness = FixedPointReadinessEvaluator.evaluate(
+            FixedPointReadinessInput(
+                nowElapsedRealtimeMillis = nowElapsedRealtimeMillis,
+                appState = state,
+                movementMode = movementMode,
+                rawTarget = rawTarget,
+                injectedTarget = injectedTarget,
+                session = session,
+                isMockAppSelected = MockEnvironmentChecker.isMockLocationAppSelected(context),
+                missingPermissions = missingPermissions,
+                systemLocationEnabled = MockEnvironmentChecker.isSystemLocationEnabled(context),
+                batteryIgnoringOptimizations = MockEnvironmentChecker.isIgnoringBatteryOptimizations(context),
+                gpsEnabled = gpsEnabled,
+                networkEnabled = networkEnabled,
+                gpsLastKnown = gps,
+                networkLastKnown = network,
+                fusedAvailable = fused.available,
+                fusedMockModeEnabled = fused.mockModeEnabled,
+                fusedMockModePending = fused.mockModePending,
+                fusedLastInjectionPending = fused.lastInjectionPending,
+                fusedLastInjectionElapsedRealtimeMillis = fused.lastInjectionElapsedRealtimeMillis,
+                fusedLastSuccessfulLatitude = fused.lastSuccessfulLatitude,
+                fusedLastSuccessfulLongitude = fused.lastSuccessfulLongitude,
+                fusedLastSuccessfulAccuracyMeters = fused.lastSuccessfulAccuracyMeters,
+                injectorStatus = injectorStatus,
+                lastInjection = lastInjection,
+            ),
+        )
+        fixedPointReadiness?.let { readiness ->
+            FixedPointSessionStore.applyEvaluation(
+                expectedGeneration = session.generation,
+                stableSinceElapsedRealtimeMillis = readiness.stableSinceElapsedRealtimeMillis,
+            )
+        }
         val packageInfo = runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0)
         }.getOrNull()
@@ -122,6 +171,7 @@ object LocationDiagnosticsReader {
             calibrationMode = calibrationMode,
             searchRequestCount = AppSessionMetrics.searchRequests,
             restorationState = restorationState,
+            fixedPointReadiness = fixedPointReadiness,
         )
     }
 
@@ -162,6 +212,7 @@ object LocationDiagnosticsReader {
                     endLongitude = it.longitude,
                 )
             },
+            elapsedRealtimeNanos = elapsedRealtimeNanos,
         )
     }
 }

@@ -10,6 +10,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -22,10 +23,12 @@ import com.aurora.modifypositioning.domain.RouteSimulationEngine
 import com.aurora.modifypositioning.domain.SimulationTick
 import com.aurora.modifypositioning.domain.StepResult
 import com.aurora.modifypositioning.domain.calibration.MainlandCoordinateCalibrator
+import com.aurora.modifypositioning.fixed.FixedPointSessionStore
 import com.aurora.modifypositioning.location.AndroidLocationInjector
 import com.aurora.modifypositioning.location.CompositeLocationInjector
 import com.aurora.modifypositioning.location.FusedLocationDiagnosticsStore
 import com.aurora.modifypositioning.location.FusedLocationInjector
+import com.aurora.modifypositioning.location.distanceMeters
 import com.aurora.modifypositioning.model.CoordinateCalibrationMode
 import com.aurora.modifypositioning.model.DEFAULT_TARGET
 import com.aurora.modifypositioning.model.ENHANCED_STARTUP_BURST_COUNT
@@ -75,6 +78,8 @@ class MockLocationService : Service() {
     private var injectionLoopJob: Job? = null
     private var restorationJob: Job? = null
     private var simulationEngine: LocationSimulationEngine? = null
+    private var currentRawFixedTarget: TargetLocation? = null
+    private var currentInjectedTarget: TargetLocation? = null
     private var thirdPartyCompatibilityUntilMillis = 0L
     private var explicitStop = false
     private var wakeLock: PowerManager.WakeLock? = null
@@ -108,16 +113,24 @@ class MockLocationService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> {
-                lifecycleGate.beginStart()
-                explicitStop = false
-                setKeepRunning(true)
-                restorationJob?.cancel()
-                restorationJob = null
-                handleStart()
-            }
+            ACTION_START -> beginServiceStart()
 
             ACTION_PAUSE -> handlePause()
+            ACTION_RESTABILIZE_FIXED -> {
+                val persistedMovementMode = runBlocking { mapPreferencesStore.getMovementMode() }
+                when (
+                    resolveRestabilizeDispatch(
+                        movementMode = controller.movementMode.value,
+                        persistedMovementMode = persistedMovementMode,
+                        state = controller.state.value,
+                        hasSimulationSession = simulationEngine != null,
+                    )
+                ) {
+                    RestabilizeDispatch.START -> beginServiceStart()
+                    RestabilizeDispatch.RESTABILIZE -> restabilizeFixedTarget()
+                    RestabilizeDispatch.IGNORE -> Unit
+                }
+            }
             ACTION_STOP -> {
                 explicitStop = true
                 setKeepRunning(false)
@@ -132,6 +145,15 @@ class MockLocationService : Service() {
             }
         }
         return START_REDELIVER_INTENT
+    }
+
+    private fun beginServiceStart() {
+        lifecycleGate.beginStart()
+        explicitStop = false
+        setKeepRunning(true)
+        restorationJob?.cancel()
+        restorationJob = null
+        handleStart()
     }
 
     private fun handleStart() {
@@ -196,6 +218,19 @@ class MockLocationService : Service() {
         stopInjectionLoop()
 
         val initialInjectTarget = buildInjectTarget(startupPlan.movementStartTarget, calibrationMode)
+        if (startupPlan.movementMode == MovementMode.FIXED) {
+            currentRawFixedTarget = startupPlan.movementStartTarget
+            currentInjectedTarget = initialInjectTarget
+            FixedPointSessionStore.start(
+                rawTarget = startupPlan.movementStartTarget,
+                injectedTarget = initialInjectTarget,
+                nowElapsedRealtimeMillis = SystemClock.elapsedRealtime(),
+            )
+        } else {
+            currentRawFixedTarget = null
+            currentInjectedTarget = null
+            FixedPointSessionStore.resetToIdle()
+        }
         simulationEngine = LocationSimulationEngine(
             initialTarget = initialInjectTarget,
             initialMovementMode = startupPlan.movementMode,
@@ -207,7 +242,7 @@ class MockLocationService : Service() {
         acquireWakeLock()
         thirdPartyCompatibilityUntilMillis = System.currentTimeMillis() + THIRD_PARTY_COMPATIBILITY_WARMUP_MS
         recoveryBurstPolicy.reset()
-        startInjectionLoop()
+        startInjectionLoop(startupPlan.movementMode)
 
         when (startupPlan.movementMode) {
             MovementMode.RANDOM_WALK -> {
@@ -268,6 +303,9 @@ class MockLocationService : Service() {
         stopService: Boolean,
     ) {
         if (cleanupStartedComponents) {
+            if (controller.movementMode.value == MovementMode.FIXED) {
+                FixedPointSessionStore.stop()
+            }
             stopRandomWalkLoop()
             stopRouteMovementLoop()
             stopInjectionLoop()
@@ -472,15 +510,21 @@ class MockLocationService : Service() {
         routeMovementJob = null
     }
 
-    private fun startInjectionLoop() {
+    private fun startInjectionLoop(mode: MovementMode) {
         injectionLoopJob?.cancel()
         injectionLoopJob = serviceScope.launch {
+            if (mode == MovementMode.FIXED) {
+                FixedPointSessionStore.onBursting()
+            }
             repeat(ENHANCED_STARTUP_BURST_COUNT) {
                 if (!isActive) {
                     return@launch
                 }
                 injectNextSample()
                 delay(ENHANCED_STARTUP_BURST_INTERVAL_MS)
+            }
+            if (mode == MovementMode.FIXED) {
+                FixedPointSessionStore.onSettling()
             }
             while (isActive) {
                 injectNextSample()
@@ -539,6 +583,40 @@ class MockLocationService : Service() {
         recoveryBurstPolicy.onReport(report.recoveryStatus != null)
     }
 
+    private fun restabilizeFixedTarget() {
+        if (
+            controller.movementMode.value != MovementMode.FIXED ||
+            (controller.state.value != MockState.Running && controller.state.value != MockState.Paused) ||
+            simulationEngine == null
+        ) {
+            return
+        }
+        val rawTarget = runBlocking { mapPreferencesStore.getTargetOrNull() } ?: currentRawFixedTarget ?: DEFAULT_TARGET
+        val calibrationMode = runBlocking { mapPreferencesStore.getCalibrationMode() }
+        val injectedTarget = buildInjectTarget(rawTarget, calibrationMode)
+        val largeJump = isLargeFixedTargetJump(currentInjectedTarget, injectedTarget)
+
+        currentRawFixedTarget = rawTarget
+        currentInjectedTarget = injectedTarget
+        injector.updateTarget(injectedTarget)
+        simulationEngine?.reset(
+            target = injectedTarget,
+            movementMode = MovementMode.FIXED,
+            environment = environmentFor(MovementMode.FIXED),
+        )
+        controller.onServiceStarted(rawTarget)
+        FixedPointSessionStore.restart(
+            rawTarget = rawTarget,
+            injectedTarget = injectedTarget,
+            nowElapsedRealtimeMillis = SystemClock.elapsedRealtime(),
+        )
+        thirdPartyCompatibilityUntilMillis = System.currentTimeMillis() + THIRD_PARTY_COMPATIBILITY_WARMUP_MS
+        recoveryBurstPolicy.force(
+            if (largeJump) THIRD_PARTY_RECOVERY_BURST_COUNT else (THIRD_PARTY_RECOVERY_BURST_COUNT / 2).coerceAtLeast(1),
+        )
+        refreshNotification()
+    }
+
     private fun buildInjectTarget(
         selectedTarget: TargetLocation,
         calibrationMode: CoordinateCalibrationMode,
@@ -576,6 +654,9 @@ class MockLocationService : Service() {
         restorationJob = serviceScope.launch {
             val cleanupStarted = lifecycleGate.runIfCurrent(stopToken) {
                 controller.onRestorationStarted()
+                if (controller.movementMode.value == MovementMode.FIXED) {
+                    FixedPointSessionStore.stop()
+                }
                 stopRandomWalkLoop()
                 stopRouteMovementLoop()
                 stopInjectionLoop()
@@ -599,6 +680,7 @@ class MockLocationService : Service() {
     private suspend fun awaitRestorationState(): RestorationState {
         val deadlineMillis = System.currentTimeMillis() + RESTORATION_TIMEOUT_MS
         while (true) {
+            injector.aggregateStatus()
             val fused = FusedLocationDiagnosticsStore.state.value
             val state = evaluateRestorationState(
                 fusedMockModeEnabled = fused.mockModeEnabled,
@@ -766,6 +848,7 @@ class MockLocationService : Service() {
         const val ACTION_START = "$ACTION_PREFIX.START"
         const val ACTION_PAUSE = "$ACTION_PREFIX.PAUSE"
         const val ACTION_STOP = "$ACTION_PREFIX.STOP"
+        const val ACTION_RESTABILIZE_FIXED = "$ACTION_PREFIX.RESTABILIZE_FIXED"
         private const val SERVICE_PREFS = "service_prefs"
         private const val KEY_KEEP_RUNNING = "keep_running"
         private const val RESTORATION_TIMEOUT_MS = 3_000L
@@ -783,6 +866,10 @@ class MockLocationService : Service() {
             return Intent(context, MockLocationService::class.java).setAction(ACTION_STOP)
         }
 
+        fun restabilizeFixedIntent(context: Context): Intent {
+            return Intent(context, MockLocationService::class.java).setAction(ACTION_RESTABILIZE_FIXED)
+        }
+
         fun createNotificationChannel(context: Context) {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
                 return
@@ -797,6 +884,28 @@ class MockLocationService : Service() {
             }
             manager.createNotificationChannel(channel)
         }
+    }
+}
+
+internal enum class RestabilizeDispatch {
+    START,
+    RESTABILIZE,
+    IGNORE,
+}
+
+internal fun resolveRestabilizeDispatch(
+    movementMode: MovementMode,
+    persistedMovementMode: MovementMode,
+    state: MockState,
+    hasSimulationSession: Boolean,
+): RestabilizeDispatch {
+    val active = state == MockState.Running || state == MockState.Paused
+    return when {
+        active && movementMode != MovementMode.FIXED -> RestabilizeDispatch.IGNORE
+        !hasSimulationSession && persistedMovementMode != MovementMode.FIXED -> RestabilizeDispatch.IGNORE
+        !hasSimulationSession -> RestabilizeDispatch.START
+        active -> RestabilizeDispatch.RESTABILIZE
+        else -> RestabilizeDispatch.START
     }
 }
 
@@ -849,8 +958,30 @@ internal class RecoveryBurstPolicy(
     }
 
     @Synchronized
+    fun force(count: Int = burstCount) {
+        remaining = count.coerceAtLeast(0)
+        recoveryActive = true
+    }
+
+    @Synchronized
     fun reset() {
         recoveryActive = false
         remaining = 0
     }
+}
+
+internal fun isLargeFixedTargetJump(
+    previous: TargetLocation?,
+    next: TargetLocation,
+    thresholdMeters: Double = 2_000.0,
+): Boolean {
+    if (previous == null) {
+        return false
+    }
+    return distanceMeters(
+        startLatitude = previous.latitude,
+        startLongitude = previous.longitude,
+        endLatitude = next.latitude,
+        endLongitude = next.longitude,
+    ) >= thresholdMeters
 }
