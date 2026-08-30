@@ -539,7 +539,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openBatteryOptimizationSettings() {
-        startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        val requestIntent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+            data = android.net.Uri.parse("package:$packageName")
+        }
+        runCatching { startActivity(requestIntent) }
+            .onFailure {
+                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            }
     }
 
     companion object {

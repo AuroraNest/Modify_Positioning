@@ -5,6 +5,8 @@ import android.content.Context
 import android.location.Criteria
 import android.location.Location
 import android.location.LocationManager
+import android.location.provider.ProviderProperties
+import android.os.Build
 import com.aurora.modifypositioning.model.InjectionReport
 import com.aurora.modifypositioning.model.TargetLocation
 import com.aurora.modifypositioning.simulation.LocationSample
@@ -247,22 +249,38 @@ class AndroidLocationInjector(
         }.getOrDefault(false)
     }
 
+    @Suppress("DEPRECATION")
     private fun addTestProvider(provider: String) {
         val manager = locationManager ?: return
         val profile = testProviderProfile(provider)
         runCatching { manager.removeTestProvider(provider) }
-        manager.addTestProvider(
-            provider,
-            profile.requiresNetwork,
-            profile.requiresSatellite,
-            profile.requiresCell,
-            false,
-            true,
-            true,
-            true,
-            profile.powerRequirement,
-            profile.accuracy,
-        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val properties = ProviderProperties.Builder()
+                .setHasNetworkRequirement(profile.requiresNetwork)
+                .setHasSatelliteRequirement(profile.requiresSatellite)
+                .setHasCellRequirement(profile.requiresCell)
+                .setHasMonetaryCost(false)
+                .setHasAltitudeSupport(true)
+                .setHasSpeedSupport(true)
+                .setHasBearingSupport(true)
+                .setPowerUsage(profile.powerRequirement)
+                .setAccuracy(profile.accuracy)
+                .build()
+            manager.addTestProvider(provider, properties)
+        } else {
+            manager.addTestProvider(
+                provider,
+                profile.requiresNetwork,
+                profile.requiresSatellite,
+                profile.requiresCell,
+                false,
+                true,
+                true,
+                true,
+                profile.powerRequirement,
+                profile.accuracy,
+            )
+        }
     }
 
     private fun removeProviders() {
