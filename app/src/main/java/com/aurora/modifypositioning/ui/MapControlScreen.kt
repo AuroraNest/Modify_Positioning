@@ -105,6 +105,9 @@ fun MapControlScreen(
     onAmapPrivacyAcceptedChanged: (Boolean) -> Unit,
     onUseSearchTarget: () -> Unit,
     onUseMapCenterTarget: () -> Unit,
+    onManualLatChanged: (String) -> Unit,
+    onManualLngChanged: (String) -> Unit,
+    onApplyManualCoordinate: () -> Unit,
     onCalibrationModeChanged: (CoordinateCalibrationMode) -> Unit,
     onAddFavorite: () -> Unit,
     onFavoriteNameInputChanged: (String) -> Unit,
@@ -369,6 +372,9 @@ fun MapControlScreen(
                     uiState = uiState,
                     onUseSearchTarget = onUseSearchTarget,
                     onUseMapCenterTarget = onUseMapCenterTarget,
+                    onManualLatChanged = onManualLatChanged,
+                    onManualLngChanged = onManualLngChanged,
+                    onApplyManualCoordinate = onApplyManualCoordinate,
                     onCalibrationModeChanged = onCalibrationModeChanged,
                     onMapProviderChanged = onMapProviderChanged,
                     onAdvancedSettingsVisibleChanged = onAdvancedSettingsVisibleChanged,
@@ -611,6 +617,9 @@ private fun TargetControlPanel(
     uiState: MapControlUiState,
     onUseSearchTarget: () -> Unit,
     onUseMapCenterTarget: () -> Unit,
+    onManualLatChanged: (String) -> Unit,
+    onManualLngChanged: (String) -> Unit,
+    onApplyManualCoordinate: () -> Unit,
     onCalibrationModeChanged: (CoordinateCalibrationMode) -> Unit,
     onMapProviderChanged: (MapProvider) -> Unit,
     onAdvancedSettingsVisibleChanged: (Boolean) -> Unit,
@@ -679,6 +688,43 @@ private fun TargetControlPanel(
                 ) {
                     Text("使用搜索结果")
                 }
+            }
+
+            Text("精确坐标", style = MaterialTheme.typography.titleSmall)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = uiState.manualLat,
+                    onValueChange = onManualLatChanged,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("manual_lat"),
+                    singleLine = true,
+                    label = { Text("纬度") },
+                    placeholder = { Text("-90..90") },
+                )
+                OutlinedTextField(
+                    value = uiState.manualLng,
+                    onValueChange = onManualLngChanged,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("manual_lng"),
+                    singleLine = true,
+                    label = { Text("经度") },
+                    placeholder = { Text("-180..180") },
+                )
+            }
+            Button(
+                onClick = onApplyManualCoordinate,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("manual_apply"),
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Text("使用精确坐标")
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
