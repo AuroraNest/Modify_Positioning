@@ -1,7 +1,9 @@
 # Modify Positioning
 
 > [!IMPORTANT]
-> **iOS 独立方案来自 [Yu9191/wloc](https://github.com/Yu9191/wloc), 本人亲测有效!** 本仓库仅通过 Git submodule 引用该外部项目, 不代表其原创或所有权归属本项目. 原作者为 [Yu9191](https://github.com/Yu9191), 使用方法和更新以原仓库为准. 进入 [`ios/`](ios/) 查看引用说明.
+> **使用 iOS 27 beta 6 及以上版本的 iPhone? 请查看我们的 [Aurora Location](https://github.com/AuroraNest/Aurora-Location) 修改定位方案.** 该项目通过 Apple DVT 模拟定位, 支持 iOS 27 本机 Remote Pairing 和 Shadowrocket 单 VPN 连接, 仓库提供详细中英文安装、配对和使用教程. 需要 Developer Mode、有效签名和 Xcode 设备准备; 具体兼容性及后台保持限制以该仓库说明为准.
+>
+> 旧的 [Yu9191/wloc](https://github.com/Yu9191/wloc) 方案曾在此前版本亲测有效, 但上游已说明 iOS 27 beta 6 起禁止对 Apple WLOC 域名进行 MITM 拦截, 因而不适用于这些版本. 本仓库仍通过 Git submodule 保留该外部项目引用, 原作者为 [Yu9191](https://github.com/Yu9191), 不代表其原创或所有权归属本项目. 进入 [`ios/`](ios/) 查看引用说明.
 
 Modify Positioning 是一个无 Root Android 虚拟定位 App, 使用 Android 官方 mock location 能力把选定坐标持续注入到系统标准定位链路中. 项目目标是做一个真实, 稳定, 可诊断的 Android Location Simulation Lab, 方便开发者和测试人员验证地图选点, GPS provider, Network provider, Fused Location Provider, 前台服务和位置诊断流程.
 
@@ -12,7 +14,8 @@ Modify Positioning 是一个无 Root Android 虚拟定位 App, 使用 Android �
 | 平台 | 目录 | 归属与说明 |
 | --- | --- | --- |
 | Android | [`app/`](app/) | 本仓库原生 Android App, 使用 Android 官方 mock location 能力. |
-| iOS | [`ios/wloc`](ios/wloc) | **外部项目引用:** [Yu9191/wloc](https://github.com/Yu9191/wloc), 通过 Git submodule 保留原仓库来源与版本. |
+| iPhone / iOS 27 beta 6 及以上 | [Aurora Location](https://github.com/AuroraNest/Aurora-Location) | 独立 iPhone 修改定位项目, 使用 Apple DVT; 安装和使用条件见该仓库. |
+| iOS / 旧 WLOC 方案 | [`ios/wloc`](ios/wloc) | **外部项目引用:** [Yu9191/wloc](https://github.com/Yu9191/wloc), 通过 Git submodule 保留原仓库来源与版本. |
 
 > [!CAUTION]
 > `ios/wloc` 不是本项目原创代码. 请勿移除原作者信息、原仓库链接或将其描述为 Modify Positioning 自研功能. 该方案修改 Apple WLOC 网络定位(Wi-Fi/基站)返回坐标, 需要代理模块与 MITM 配置, 不修改 GPS 硬件定位.
